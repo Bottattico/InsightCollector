@@ -1,119 +1,299 @@
 (async function initApp() {
-    console.log("SYSTEM: Initializing with Supabase & Groq");
+    console.log("SYSTEM: Initializing BTO Insight Hub");
 
     try {
-        // --- INIZIALIZZA SUPABASE ---
+        // ─── SUPABASE ──────────────────────────────────────────────────────────
         const supa = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
-        // --- AUTHENTICATION LOGIC ---
+        // ─── ROLE SYSTEM ───────────────────────────────────────────────────────
+        // Livello numerico per confronti rapidi
+        const ORG_ROLE_LEVEL = {
+            consulente: 0,
+            team_leader: 1,
+            engagement_manager: 2,
+            lead: 3,
+            practice_manager: 4,
+            responsabile: 5,
+            bu_manager: 6,
+            marketing: 1,
+            sales: 1,
+            hr: 1,
+            operations: 1,
+            admin: 99
+        };
+
+        // Label leggibili per ogni ruolo
+        const ROLE_LABELS = {
+            consulente:          'Consulente',
+            team_leader:         'Team Leader',
+            engagement_manager:  'Engagement Manager',
+            lead:                'Lead',
+            practice_manager:    'Practice Manager',
+            responsabile:        'Responsabile',
+            bu_manager:          'BU Manager',
+            marketing:           'Marketing',
+            sales:               'Sales',
+            hr:                  'HR',
+            operations:          'Operations',
+            admin:               'Admin'
+        };
+
+        // Colori badge per ogni ruolo (usati nel profilo e nelle card)
+        const ROLE_COLORS = {
+            consulente:          { bg: 'rgba(148,163,184,0.12)', color: '#94A3B8' },
+            team_leader:         { bg: 'rgba(59,130,246,0.12)',  color: '#3B82F6' },
+            engagement_manager:  { bg: 'rgba(99,102,241,0.12)',  color: '#6366F1' },
+            lead:                { bg: 'rgba(139,92,246,0.12)',  color: '#8B5CF6' },
+            practice_manager:    { bg: 'rgba(168,85,247,0.12)', color: '#A855F7' },
+            responsabile:        { bg: 'rgba(236,72,153,0.12)', color: '#EC4899' },
+            bu_manager:          { bg: 'rgba(234,179,8,0.12)',   color: '#EAB308' },
+            marketing:           { bg: 'rgba(249,115,22,0.12)', color: '#F97316' },
+            sales:               { bg: 'rgba(20,184,166,0.12)', color: '#14B8A6' },
+            hr:                  { bg: 'rgba(16,185,129,0.12)', color: '#10B981' },
+            operations:          { bg: 'rgba(239,68,68,0.12)',  color: '#EF4444' },
+            admin:               { bg: 'rgba(234,179,8,0.15)',  color: '#EAB308' }
+        };
+
+        // ─── STATO GLOBALE ─────────────────────────────────────────────────────
+        let currentUser       = null;   // email
+        let currentUserId     = null;   // uuid
+        let currentUserOrgRole = 'consulente';
+        let currentUserName   = '';
+        let allInsights       = [];
+        let myUpvotedIds      = new Set();
+        let points            = 0;
+        let weeklyInsights    = 0;
+        const weeklyGoal      = 5;
+        let dbClients         = [];
+        let userTeams         = [];
+        let mockCategories    = ["Strategia", "Tecnologia", "Processi", "Competitor", "Cultura", "CyberSecurity"];
+        let mockTeams         = ["Team AI Transformation", "Team Cloud Journey", "Team Agile Governance", "Team CyberSecurity"];
+
+        // Helper ruolo
+        function hasOrgRole(minRole) {
+            return (ORG_ROLE_LEVEL[currentUserOrgRole] ?? 0) >= (ORG_ROLE_LEVEL[minRole] ?? 0);
+        }
+        function isStaffRole(fn) {
+            return currentUserOrgRole === fn;
+        }
+        function canSeeAuthor() {
+            return hasOrgRole('team_leader');
+        }
+        function canDeleteInsight(insight) {
+            return (insight.author_email || insight.author) === currentUser || hasOrgRole('responsabile');
+        }
+        function canReadSecret(insight) {
+            return (insight.author_email || insight.author) === currentUser || hasOrgRole('responsabile');
+        }
+
+        // ─── DOM REFS ──────────────────────────────────────────────────────────
+        const authContainer    = document.getElementById('auth-container');
+        const mainApp          = document.getElementById('main-app');
+        const authForm         = document.getElementById('auth-form');
+        const authEmail        = document.getElementById('auth-email');
+        const authPassword     = document.getElementById('auth-password');
+        const authTitle        = document.getElementById('auth-title');
+        const authSubmitBtn    = document.getElementById('auth-submit-btn');
+        const authSwitchLink   = document.getElementById('auth-switch-link');
+        const authError        = document.getElementById('auth-error');
+        const logoutBtn        = document.getElementById('logout-btn');
+        const form             = document.getElementById('insight-form');
+        const submitBtn        = document.getElementById('submit-btn');
+        const toast            = document.getElementById('toast');
+        const toastTitle       = document.getElementById('toast-title');
+        const toastMessage     = document.getElementById('toast-message');
+        const toastIconI       = document.getElementById('toast-icon-i');
+        const totalPointsEls   = document.querySelectorAll('#total-points');
+        const weeklyProgressEl = document.getElementById('weekly-progress');
+        const goalTextEl       = document.getElementById('goal-text');
+        const goalHintEl       = document.querySelector('.goal-hint');
+        const navItems         = document.querySelectorAll('.nav-item[data-target], .user-profile[data-target]');
+        const viewSections     = document.querySelectorAll('.view-section');
+        const insightsGrid     = document.getElementById('insights-grid');
+        const searchInput      = document.getElementById('search-input');
+        const clientListDOM    = document.getElementById('client-list');
+        const categoryListDOM  = document.getElementById('category-list');
+        const teamListDOM      = document.getElementById('team-list');
+        const profileTotalPoints   = document.getElementById('profile-total-points');
+        const profileTotalInsights = document.getElementById('profile-total-insights');
+        const profileTotalUpvotes  = document.getElementById('profile-total-upvotes');
+        const profileInsightsGrid  = document.getElementById('profile-insights-grid');
+        const leaderboardInd   = document.getElementById('leaderboard-individuals');
+        const leaderboardTeams = document.getElementById('leaderboard-teams');
+        const chatForm         = document.getElementById('chat-form');
+        const chatInput        = document.getElementById('chat-input');
+        const chatHistory      = document.getElementById('chat-history');
+
+        // ─── AUTH ──────────────────────────────────────────────────────────────
         let isLoginMode = true;
-        const authContainer = document.getElementById('auth-container');
-        const mainApp = document.getElementById('main-app');
-        const authForm = document.getElementById('auth-form');
-        const authEmail = document.getElementById('auth-email');
-        const authPassword = document.getElementById('auth-password');
-        const authTitle = document.getElementById('auth-title');
-        const authSubmitBtn = document.getElementById('auth-submit-btn');
-        const authSwitchLink = document.getElementById('auth-switch-link');
-        const authError = document.getElementById('auth-error');
-        const logoutBtn = document.getElementById('logout-btn');
 
-        let currentUser = null;
-
+        /**
+         * Punto di ingresso post-login.
+         * ATTENDE il fetch del profilo prima di aggiornare qualsiasi UI.
+         */
         async function updateAuthState(session) {
-            if (session) {
-                currentUser = session.user.email;
-                if(authContainer) authContainer.style.display = 'none';
-                if(mainApp) mainApp.style.display = 'flex';
-                
-                // Update UI Profile names (usa nome e cognome se disponibili)
-                const meta = session.user.user_metadata || {};
-                const userNameDisplay = (meta.first_name && meta.last_name) 
-                    ? `${meta.first_name} ${meta.last_name}` 
-                    : currentUser.split('@')[0];
-                const sidebarName = document.getElementById('sidebar-name');
-                const profileName = document.getElementById('profile-name-large');
-                if(sidebarName) sidebarName.textContent = userNameDisplay;
-                if(profileName) profileName.textContent = userNameDisplay;
-
-                // Salva il nome nel greeting per updateUIByRole
-                const greetingEl = document.getElementById('topbar-greeting');
-                if(greetingEl) greetingEl.dataset.firstname = meta.first_name || userNameDisplay;
-
-                // Update Role
-                const profileRole = document.getElementById('profile-role-large');
-                if(sidebarRole) sidebarRole.textContent = userRole;
-                if(profileRole) profileRole.textContent = userRole;
-                
-                const avatarUrl = `https://ui-avatars.com/api/?name=${userNameDisplay}&background=3B82F6&color=fff`;
-                const sidebarAv = document.getElementById('sidebar-avatar');
-                const profileAv = document.getElementById('profile-avatar-large');
-                if(sidebarAv) sidebarAv.src = avatarUrl;
-                if(profileAv) profileAv.src = avatarUrl + "&size=120";
-
-                // Load Data
-                try {
-                    // Carica org_role dal profilo Supabase
-                    const { data: profile } = await supa
-                        .from('profiles')
-                        .select('org_role')
-                        .eq('id', session.user.id)
-                        .single();
-                    if (profile?.org_role) {
-                        currentUserOrgRole = profile.org_role;
-                        // Aggiorna la UI ora che abbiamo il ruolo reale
-                        const sidebarRoleEl = document.getElementById('sidebar-role');
-                        const profileRoleEl = document.getElementById('profile-role-large');
-                        const roleLabels = {
-                            consulente: 'Consulente', team_leader: 'Team Leader',
-                            engagement_manager: 'Engagement Manager', lead: 'Lead',
-                            practice_manager: 'Practice Manager', responsabile: 'Responsabile',
-                            bu_manager: 'BU Manager', marketing: 'Marketing', sales: 'Sales',
-                            hr: 'HR', operations: 'Operations', admin: 'Admin'
-                        };
-                        const label = roleLabels[currentUserOrgRole] || currentUserOrgRole;
-                        if (sidebarRoleEl) sidebarRoleEl.textContent = label;
-                        if (profileRoleEl) profileRoleEl.textContent = label;                    
-                    }
-                    updateUIByRole();
-                    await loadMyUpvotes();
-                    loadInsights();
-                    populateDatalists();
-                } catch(e) {
-                    console.warn("Dati non caricati (controlla tabelle SQL):", e);
-                }
-            } else {
+            if (!session) {
                 currentUser = null;
-                if(authContainer) authContainer.style.display = 'flex';
-                if(mainApp) mainApp.style.display = 'none';
+                currentUserId = null;
+                currentUserOrgRole = 'consulente';
+                currentUserName = '';
+                allInsights = [];
+                points = 0;
+                weeklyInsights = 0;
+                myUpvotedIds = new Set();
+                if (authContainer) authContainer.style.display = 'flex';
+                if (mainApp)       mainApp.style.display       = 'none';
+                return;
+            }
+
+            // ── 1. Carica profilo dal DB (fonte di verità) ──────────────────
+            let profileData = null;
+            try {
+                const { data, error } = await supa
+                    .from('profiles')
+                    .select('org_role, first_name, last_name, role, email')
+                    .eq('id', session.user.id)
+                    .single();
+                if (!error) profileData = data;
+            } catch (e) {
+                console.warn('Profilo non caricabile:', e);
+            }
+
+            // ── 2. Imposta variabili globali ────────────────────────────────
+            currentUser        = session.user.email;
+            currentUserId      = session.user.id;
+            currentUserOrgRole = profileData?.org_role
+                ?? session.user.user_metadata?.org_role
+                ?? 'consulente';
+
+            const meta = session.user.user_metadata || {};
+            const firstName = profileData?.first_name || meta.first_name || '';
+            const lastName  = profileData?.last_name  || meta.last_name  || '';
+            currentUserName = (firstName && lastName)
+                ? `${firstName} ${lastName}`
+                : firstName || currentUser.split('@')[0];
+
+            // ── 3. Aggiorna UI sidebar / topbar ─────────────────────────────
+            const roleLabel  = ROLE_LABELS[currentUserOrgRole] || currentUserOrgRole;
+            const roleColors = ROLE_COLORS[currentUserOrgRole] || ROLE_COLORS.consulente;
+            const avatarUrl  = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUserName)}&background=3B82F6&color=fff`;
+
+            setEl('sidebar-name',         currentUserName);
+            setEl('sidebar-role',         roleLabel);
+            setEl('profile-name-large',   currentUserName);
+            setEl('profile-role-large',   roleLabel);
+            setImgSrc('sidebar-avatar',   avatarUrl);
+            setImgSrc('profile-avatar-large', avatarUrl + '&size=120');
+
+            const orgBadge = document.getElementById('org-role-badge');
+            if (orgBadge) {
+                orgBadge.textContent = roleLabel;
+                orgBadge.style.background = roleColors.bg;
+                orgBadge.style.color      = roleColors.color;
+            }
+
+            // Greeting dinamico
+            const hour   = new Date().getHours();
+            const saluto = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
+            setEl('topbar-greeting', `${saluto}, ${firstName || currentUserName}`);
+
+            // ── 4. Mostra app e aggiorna navigazione per ruolo ───────────────
+            if (authContainer) authContainer.style.display = 'none';
+            if (mainApp)       mainApp.style.display       = 'flex';
+
+            updateNavByRole();
+
+            // ── 5. Carica dati ───────────────────────────────────────────────
+            try {
+                await loadMyUpvotes();
+                await loadInsights();
+                await populateDatalists();
+            } catch (e) {
+                console.warn('Errore caricamento dati iniziali:', e);
             }
         }
 
-        // Check session on load
-        const { data: { session } } = await supa.auth.getSession();
-        updateAuthState(session);
+        // Helper DOM
+        function setEl(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+        function setImgSrc(id, src) {
+            const el = document.getElementById(id);
+            if (el) el.src = src;
+        }
 
-        if(authSwitchLink) {
+        // ─── NAVIGAZIONE PER RUOLO ─────────────────────────────────────────────
+        /**
+         * Mostra/nasconde voci di nav e feature in base a org_role.
+         * Regole:
+         *  - Tutti: Nuovo Insight, Esplora, Brain, Classifiche, Profilo
+         *  - team_leader+: vedono autori nelle card insight
+         *  - lead+: pulsante Esporta CSV
+         *  - practice_manager+: sezione Analytics (se presente)
+         *  - responsabile+: possono eliminare insight altrui
+         *  - bu_manager+: accesso a tutte le sezioni admin
+         *  - marketing|admin: sezione Marketing AI (se presente)
+         *  - admin: badge speciale, tutto visibile
+         */
+        function updateNavByRole() {
+            // Esporta CSV — solo lead+
+            const exportBtn = document.getElementById('export-btn');
+            if (exportBtn) exportBtn.style.display = hasOrgRole('lead') ? 'flex' : 'none';
+
+            // Analytics — solo practice_manager+
+            const analyticsNav = document.querySelector('[data-target="view-analytics"]');
+            if (analyticsNav) analyticsNav.style.display = hasOrgRole('practice_manager') ? 'flex' : 'none';
+
+            // Marketing AI — solo marketing o admin
+            const marketingNav = document.querySelector('[data-target="view-marketing"]');
+            if (marketingNav) {
+                marketingNav.style.display =
+                    (isStaffRole('marketing') || currentUserOrgRole === 'admin') ? 'flex' : 'none';
+            }
+
+            // Pulsante "Crea Team" — tutti gli autenticati
+            const createTeamBtnEl = document.getElementById('create-team-btn');
+            if (createTeamBtnEl) createTeamBtnEl.style.display = 'flex';
+
+            // Badge admin visibile nella sidebar
+            const adminBadge = document.getElementById('admin-sidebar-badge');
+            if (adminBadge) adminBadge.style.display = (currentUserOrgRole === 'admin') ? 'inline-flex' : 'none';
+
+            // Sezione filtri avanzati in Esplora — solo engagement_manager+
+            const advFilters = document.getElementById('advanced-filters');
+            if (advFilters) advFilters.style.display = hasOrgRole('engagement_manager') ? 'block' : 'none';
+
+            // Ricarica stats profilo se già visibile
+            const profileView = document.getElementById('view-profilo');
+            if (profileView && profileView.classList.contains('active')) renderProfile();
+        }
+
+        // ─── SESSION CHECK ────────────────────────────────────────────────────
+        const { data: { session: initSession } } = await supa.auth.getSession();
+        await updateAuthState(initSession);
+
+        // ─── AUTH FORM ────────────────────────────────────────────────────────
+        if (authSwitchLink) {
             authSwitchLink.addEventListener('click', (e) => {
                 e.preventDefault();
                 isLoginMode = !isLoginMode;
-                authTitle.textContent = isLoginMode ? "Accedi al Cervello Aziendale" : "Crea un nuovo Account";
-                authSubmitBtn.textContent = isLoginMode ? "Accedi" : "Registrati";
-                authSwitchLink.textContent = isLoginMode ? "Registrati" : "Accedi";
-                authSwitchLink.parentElement.firstChild.textContent = isLoginMode ? "Non hai un account? " : "Hai già un account? ";
+                authTitle.textContent       = isLoginMode ? 'Accedi al Cervello Aziendale' : 'Crea un nuovo Account';
+                authSubmitBtn.textContent   = isLoginMode ? 'Accedi' : 'Registrati';
+                authSwitchLink.textContent  = isLoginMode ? 'Registrati' : 'Accedi';
+                authSwitchLink.parentElement.firstChild.textContent =
+                    isLoginMode ? 'Non hai un account? ' : 'Hai già un account? ';
                 authError.style.display = 'none';
-                
-                const nameGroup = document.getElementById('auth-name-group');
-                const surnameGroup = document.getElementById('auth-surname-group');
-                const roleGroup = document.getElementById('auth-role-group');
+
                 const showMode = isLoginMode ? 'none' : 'flex';
-                if(nameGroup) nameGroup.style.display = showMode;
-                if(surnameGroup) surnameGroup.style.display = showMode;
-                if(roleGroup) roleGroup.style.display = showMode;
+                ['auth-name-group', 'auth-surname-group', 'auth-role-group'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = showMode;
+                });
             });
         }
 
-        if(authForm) {
+        if (authForm) {
             authForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 authSubmitBtn.disabled = true;
@@ -123,488 +303,354 @@
                 try {
                     if (isLoginMode) {
                         const { data, error } = await supa.auth.signInWithPassword({
-                            email: authEmail.value,
-                            password: authPassword.value,
+                            email:    authEmail.value,
+                            password: authPassword.value
                         });
                         if (error) throw error;
-                        updateAuthState(data.session);
+                        await updateAuthState(data.session);
                     } else {
-                        const nameVal = document.getElementById('auth-name')?.value.trim() || '';
+                        const nameVal    = document.getElementById('auth-name')?.value.trim()    || '';
                         const surnameVal = document.getElementById('auth-surname')?.value.trim() || '';
-                        const orgRoleVal = document.getElementById('auth-role')?.value || "consulente";
+                        const orgRoleVal = document.getElementById('auth-role')?.value            || 'consulente';
                         const { data, error } = await supa.auth.signUp({
-                            email: authEmail.value,
+                            email:    authEmail.value,
                             password: authPassword.value,
                             options: {
                                 data: {
                                     first_name: nameVal,
-                                    last_name: surnameVal,
-                                    role: orgRoleVal,
-                                    org_role: orgRoleVal
+                                    last_name:  surnameVal,
+                                    role:       orgRoleVal,
+                                    org_role:   orgRoleVal
                                 }
                             }
                         });
                         if (error) throw error;
-                        if(data.session) {
-                            updateAuthState(data.session);
+                        if (data.session) {
+                            await updateAuthState(data.session);
                         } else {
-                            authError.textContent = "Controlla la tua email per confermare la registrazione!";
+                            authError.textContent   = 'Controlla la tua email per confermare la registrazione!';
+                            authError.style.color   = 'var(--success)';
                             authError.style.display = 'block';
                         }
                     }
                 } catch (err) {
-                    authError.textContent = err.message || "Errore di autenticazione";
+                    authError.textContent   = err.message || 'Errore di autenticazione';
+                    authError.style.color   = 'var(--danger)';
                     authError.style.display = 'block';
                 } finally {
-                    authSubmitBtn.disabled = false;
-                    authSubmitBtn.textContent = isLoginMode ? "Accedi" : "Registrati";
+                    authSubmitBtn.disabled  = false;
+                    authSubmitBtn.textContent = isLoginMode ? 'Accedi' : 'Registrati';
                 }
             });
         }
 
-        if(logoutBtn) {
+        if (logoutBtn) {
             logoutBtn.addEventListener('click', async () => {
                 await supa.auth.signOut();
-
-                allInsights = [];
-                points = 0;
-                weeklyInsights = 0;
-                myUpvotedIds = new Set();
-
-                updateAuthState(null);
+                await updateAuthState(null);
             });
         }
 
-        // --- ELEMENTI DOM ---
-        const form = document.getElementById('insight-form');
-        const submitBtn = document.getElementById('submit-btn');
-        const toast = document.getElementById('toast');
-        const toastTitle = document.getElementById('toast-title');
-        const toastMessage = document.getElementById('toast-message');
-        const toastIconI = document.getElementById('toast-icon-i');
-        
-        const totalPointsEl = document.getElementById('total-points');
-        const weeklyProgressEl = document.getElementById('weekly-progress');
-        const goalTextEl = document.getElementById('goal-text');
-        const goalHintEl = document.querySelector('.goal-hint');
-
-        const navItems = document.querySelectorAll('.nav-item[data-target], .user-profile[data-target]');
-        const viewSections = document.querySelectorAll('.view-section');
-
-        const insightsGrid = document.getElementById('insights-grid');
-        const searchInput = document.getElementById('search-input');
-        
-        const clientListDOM = document.getElementById('client-list');
-        const categoryListDOM = document.getElementById('category-list');
-        const teamListDOM = document.getElementById('team-list');
-
-        const profileTotalPoints = document.getElementById('profile-total-points');
-        const profileTotalInsights = document.getElementById('profile-total-insights');
-        const profileTotalUpvotes = document.getElementById('profile-total-upvotes');
-        const profileInsightsGrid = document.getElementById('profile-insights-grid');
-
-        const leaderboardInd = document.getElementById('leaderboard-individuals');
-        const leaderboardTeams = document.getElementById('leaderboard-teams');
-
-        // AI Chat DOM
-        const chatForm = document.getElementById('chat-form');
-        const chatInput = document.getElementById('chat-input');
-        const chatHistory = document.getElementById('chat-history');
-
-        // --- STATO ---
-        let allInsights = [];
-        let currentUserOrgRole = 'consulente';
-        let points = 0;
-        let weeklyInsights = 0;
-        const weeklyGoal = 5;
-
-        // Livello gerarchico per confronti rapidi
-        const ORG_ROLE_LEVEL = {
-            consulente: 0, team_leader: 1, engagement_manager: 2,
-            lead: 3, practice_manager: 4, responsabile: 5, bu_manager: 6,
-            marketing: 1, sales: 1, hr: 1, operations: 1, admin: 99
-        };
-
-        // true se l'utente ha almeno il livello minRole
-        function hasOrgRole(minRole) {
-            return (ORG_ROLE_LEVEL[currentUserOrgRole] ?? 0) >= (ORG_ROLE_LEVEL[minRole] ?? 0);
-        }
-        function isStaffRole(fn) { return currentUserOrgRole === fn; }
-        
-        // Categorie e team base (in produzione verrebbero anche questi dal DB)
-        let mockCategories = ["Strategia", "Tecnologia", "Processi", "Competitor", "Cultura", "CyberSecurity"];
-        let mockTeams = ["Team AI Transformation", "Team Cloud Journey", "Team Agile Governance", "Team CyberSecurity"];
-        let dbClients = [];
-        let userTeams = [];
-
+        // ─── DATALISTS ────────────────────────────────────────────────────────
         async function populateDatalists() {
-            if(categoryListDOM) categoryListDOM.innerHTML = mockCategories.map(c => `<option value="${c}"></option>`).join('');
-            
-            // Carica clienti dal database
+            if (categoryListDOM) {
+                categoryListDOM.innerHTML = mockCategories
+                    .map(c => `<option value="${c}"></option>`).join('');
+            }
+
+            // Clienti dal DB
             try {
                 const { data, error } = await supa.from('clients').select('name').order('name');
                 if (!error && data) {
                     dbClients = data.map(c => c.name);
-                    if(clientListDOM) clientListDOM.innerHTML = dbClients.map(c => `<option value="${c}"></option>`).join('');
+                    if (clientListDOM) {
+                        clientListDOM.innerHTML = dbClients
+                            .map(c => `<option value="${c}"></option>`).join('');
+                    }
                 }
-            } catch(e) {
-                console.error('Errore caricamento clienti:', e);
-            }
+            } catch (e) { console.error('Clienti:', e); }
 
-            // Carica i team dell'utente dal database
+            // Team dal DB
             try {
                 if (currentUser) {
-                    const { data: memberships, error: memErr } = await supa
+                    const { data: memberships } = await supa
                         .from('team_members')
                         .select('team_id')
                         .eq('user_email', currentUser);
-                    
-                    if (!memErr && memberships && memberships.length > 0) {
-                        const teamIds = memberships.map(m => m.team_id);
-                        const { data: teams, error: teamErr } = await supa
-                            .from('teams')
-                            .select('name')
-                            .in('id', teamIds);
-                        
-                        if (!teamErr && teams) {
-                            userTeams = teams.map(t => t.name);
-                        }
+
+                    if (memberships && memberships.length > 0) {
+                        const ids = memberships.map(m => m.team_id);
+                        const { data: teams } = await supa
+                            .from('teams').select('name').in('id', ids);
+                        if (teams) userTeams = teams.map(t => t.name);
                     }
                 }
-                // Mostra i team dell'utente, o quelli di default se non ne ha ancora
                 const teamsToShow = userTeams.length > 0 ? userTeams : mockTeams;
-                if(teamListDOM) teamListDOM.innerHTML = teamsToShow.map(t => `<option value="${t}"></option>`).join('');
-            } catch(e) {
-                console.error('Errore caricamento team:', e);
-                if(teamListDOM) teamListDOM.innerHTML = mockTeams.map(t => `<option value="${t}"></option>`).join('');
-            }
-        }
-        // Non chiamare populateDatalists qui — viene chiamato dopo login da updateAuthState
-
-        // --- AGGIORNAMENTO UI IN BASE AL RUOLO ---
-        function updateUIByRole() {
-            // Mostra/nascondi voci di navigazione e sezioni in base a org_role
-            // Pulsante "Crea Team" visibile a tutti gli utenti autenticati
-            const createTeamBtn = document.getElementById('create-team-btn');
-            if (createTeamBtn) createTeamBtn.style.display = 'flex';
-            // "Classifiche" visible a tutti
-            // Nessuna nav nascosta di default per consulente base
-
-            // Mostra pulsante "Esporta" solo da lead in su
-            const exportBtn = document.getElementById('export-btn');
-            if (exportBtn) exportBtn.style.display = hasOrgRole('lead') ? 'flex' : 'none';
-
-            // Sezione "Marketing AI" solo per marketing o admin
-            const marketingNav = document.querySelector('[data-target="view-marketing"]');
-            if (marketingNav) marketingNav.style.display =
-                (isStaffRole('marketing') || currentUserOrgRole === 'admin') ? 'flex' : 'none';
-
-            // Sezione "Analytics" solo da practice_manager in su
-            const analyticsNav = document.querySelector('[data-target="view-analytics"]');
-            if (analyticsNav) analyticsNav.style.display = hasOrgRole('practice_manager') ? 'flex' : 'none';
-
-            // Badge ruolo org visibile nel profilo
-            const orgRoleBadge = document.getElementById('org-role-badge');
-            if (orgRoleBadge) {
-                const labels = {
-                    consulente: 'Consulente', team_leader: 'Team Leader',
-                    engagement_manager: 'Engagement Manager', lead: 'Lead',
-                    practice_manager: 'Practice Manager', responsabile: 'Responsabile',
-                    bu_manager: 'BU Manager', marketing: 'Marketing', sales: 'Sales',
-                    hr: 'HR', operations: 'Operations', admin: 'Admin'
-                };
-                const roleLabel = labels[currentUserOrgRole] || currentUserOrgRole;
-                if (orgRoleBadge) orgRoleBadge.textContent = roleLabel;
-
-                // Greeting dinamico
-                const hour = new Date().getHours();
-                const saluto = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
-                const greetingEl = document.getElementById('topbar-greeting');
-                if (greetingEl) {
-                    const firstName = greetingEl.dataset.firstname || roleLabel;
-                    greetingEl.textContent = `${saluto}, ${firstName}`;
+                if (teamListDOM) {
+                    teamListDOM.innerHTML = teamsToShow
+                        .map(t => `<option value="${t}"></option>`).join('');
+                }
+            } catch (e) {
+                console.error('Team:', e);
+                if (teamListDOM) {
+                    teamListDOM.innerHTML = mockTeams
+                        .map(t => `<option value="${t}"></option>`).join('');
                 }
             }
         }
 
-        // --- UPVOTES PERSISTENTI ---
-        let myUpvotedIds = new Set();
-
+        // ─── UPVOTES ──────────────────────────────────────────────────────────
         async function loadMyUpvotes() {
             if (!currentUser) return;
             try {
-                const { data, error } = await supa
+                const { data } = await supa
                     .from('user_upvotes')
                     .select('insight_id')
                     .eq('user_email', currentUser);
-                if (!error && data) {
-                    myUpvotedIds = new Set(data.map(u => u.insight_id));
-                }
-            } catch(e) {
-                console.error('Errore caricamento upvotes:', e);
+                if (data) myUpvotedIds = new Set(data.map(u => u.insight_id));
+            } catch (e) { console.error('Upvotes:', e); }
+        }
+
+        // ─── LOAD INSIGHTS ────────────────────────────────────────────────────
+        async function loadInsights() {
+            try {
+                const { data, error } = await supa
+                    .from('insights')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                allInsights = data || [];
+
+                // Calcolo stats utente corrente
+                const now         = new Date();
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                startOfWeek.setHours(0, 0, 0, 0);
+
+                const myInsights = allInsights.filter(
+                    i => (i.author_email || i.author) === currentUser
+                );
+                weeklyInsights = myInsights.filter(
+                    i => new Date(i.created_at) >= startOfWeek
+                ).length;
+
+                const myUpvotesTotal = myInsights.reduce(
+                    (sum, i) => sum + (i.upvotes || 0), 0
+                );
+                points = (myInsights.length * 50) + (myUpvotesTotal * 10);
+
+                // Aggiorna UI
+                totalPointsEls.forEach(el => { el.textContent = points; });
+                if (profileTotalPoints)   profileTotalPoints.textContent   = points;
+                if (profileTotalInsights) profileTotalInsights.textContent = myInsights.length;
+                if (profileTotalUpvotes)  profileTotalUpvotes.textContent  = myUpvotesTotal;
+
+                updateProgressBar();
+
+                // Refresh viste aperte
+                const esploraView    = document.getElementById('view-esplora-dati');
+                const profileView    = document.getElementById('view-profilo');
+                const leaderboardView= document.getElementById('view-classifica');
+
+                if (esploraView    && esploraView.classList.contains('active'))
+                    renderInsights(allInsights, insightsGrid, true);
+                if (profileView    && profileView.classList.contains('active'))
+                    renderProfile();
+                if (leaderboardView && leaderboardView.classList.contains('active'))
+                    renderLeaderboards();
+
+            } catch (e) {
+                console.error('loadInsights:', e);
+                allInsights = [];
+                points = 0;
+                weeklyInsights = 0;
+                totalPointsEls.forEach(el => { el.textContent = 0; });
             }
         }
 
-        // --- MAGIC INSERT AI LOGIC ---
-        const aiParseBtn = document.getElementById('ai-parse-btn');
-        const aiRawText = document.getElementById('ai-raw-text');
-        
-        if (aiParseBtn && aiRawText) {
-            aiParseBtn.addEventListener('click', async () => {
-                const text = aiRawText.value.trim();
-                if (!text) return;
-                
-                const origHtml = aiParseBtn.innerHTML;
-                aiParseBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Elaborazione...';
-                aiParseBtn.disabled = true;
-                
-                try {
-                    const res = await fetch('/api/parse-insight', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text })
-                    });
-                    
-                    if (!res.ok) throw new Error("Errore API");
-                    const data = await res.json();
-                    
-                    document.getElementById('title').value = data.title || '';
-                    document.getElementById('client').value = data.client || '';
-                    document.getElementById('category').value = data.category || '';
-                    document.getElementById('team').value = data.team || '';
-                    document.getElementById('details').value = data.snippet || '';
-                    
-                    showToast("Magia completata", "Controlla i dati estratti e clicca Invia Insight", "fa-wand-magic-sparkles");
-                } catch (err) {
-                    showToast("Errore", "Impossibile analizzare il testo", "fa-triangle-exclamation", false);
-                } finally {
-                    aiParseBtn.innerHTML = origHtml;
-                    aiParseBtn.disabled = false;
-                }
-            });
-        }
-
-        // --- MICROPHONE LOGIC ---
-        const micBtn = document.getElementById('ai-mic-btn');
-        let mediaRecorder = null;
-        let audioChunks = [];
-        let isRecording = false;
-
-        if (micBtn) {
-            micBtn.addEventListener('click', async () => {
-                if (!isRecording) {
-                    try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                        mediaRecorder = new MediaRecorder(stream);
-                        
-                        mediaRecorder.ondataavailable = event => {
-                            audioChunks.push(event.data);
-                        };
-
-                        mediaRecorder.onstop = async () => {
-                            micBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-                            
-                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                            audioChunks = [];
-                            
-                            const reader = new FileReader();
-                            reader.readAsDataURL(audioBlob);
-                            reader.onloadend = async () => {
-                                const base64data = reader.result;
-                                
-                                try {
-                                    const res = await fetch('/api/transcribe', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ audioBase64: base64data })
-                                    });
-                                    if(!res.ok) throw new Error("Errore trascrizione");
-                                    const data = await res.json();
-                                    
-                                    const currentVal = aiRawText.value;
-                                    aiRawText.value = currentVal ? currentVal + " " + data.text : data.text;
-                                    
-                                    showToast("Trascrizione pronta", "Puoi modificare il testo o cliccare Analizza Appunti", "fa-comment-dots");
-                                } catch (err) {
-                                    showToast("Errore API Audio", "Assicurati di essere in cloud", "fa-microphone-slash", false);
-                                } finally {
-                                    micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
-                                    micBtn.classList.remove('recording');
-                                }
-                            };
-                        };
-
-                        mediaRecorder.start();
-                        isRecording = true;
-                        micBtn.classList.add('recording');
-                        showToast("In ascolto...", "Parla ora. Clicca di nuovo per terminare.", "fa-microphone");
-
-                    } catch (err) {
-                        alert("Devi autorizzare il microfono per usare questa funzione.");
-                    }
+        // ─── PROGRESS BAR ────────────────────────────────────────────────────
+        function updateProgressBar() {
+            const pct = Math.min((weeklyInsights / weeklyGoal) * 100, 100);
+            if (weeklyProgressEl) weeklyProgressEl.style.width = `${pct}%`;
+            if (goalTextEl)       goalTextEl.textContent = `${weeklyInsights}/${weeklyGoal} Insight`;
+            if (goalHintEl) {
+                if (weeklyInsights >= weeklyGoal) {
+                    goalHintEl.innerHTML = `<i class="fa-solid fa-trophy" style="color:#F59E0B"></i> Hai raggiunto l'obiettivo settimanale! Ottimo lavoro.`;
+                    goalHintEl.style.color = '#10B981';
                 } else {
-                    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                        mediaRecorder.stop();
-                        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-                    }
-                    isRecording = false;
+                    goalHintEl.textContent =
+                        `Ancora ${weeklyGoal - weeklyInsights} insight per sbloccare il badge "Observer della Settimana"!`;
+                    goalHintEl.style.color = '';
                 }
-            });
+            }
         }
 
-        // --- SPA NAVIGATION ---
+        // ─── SPA NAVIGATION ───────────────────────────────────────────────────
         navItems.forEach(item => {
             item.addEventListener('click', async (e) => {
-                if(item.tagName === 'A') e.preventDefault();
-                
-                document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
-                if(item.classList.contains('nav-item')) item.classList.add('active');
+                if (item.tagName === 'A') e.preventDefault();
+
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                if (item.classList.contains('nav-item')) item.classList.add('active');
 
                 viewSections.forEach(section => {
                     section.classList.remove('active');
                     section.classList.add('hidden');
-                    if(section.id === 'view-ai') section.style.display = 'none';
+                    if (section.id === 'view-ai') section.style.display = 'none';
                 });
 
-                const targetId = item.getAttribute('data-target');
+                const targetId      = item.getAttribute('data-target');
                 const targetSection = document.getElementById(targetId);
-                
-                if(targetSection) {
+
+                if (targetSection) {
                     targetSection.classList.remove('hidden');
                     targetSection.classList.add('active');
-                    if(targetId === 'view-ai') targetSection.style.display = 'flex';
-                    
-                    if(targetId === 'view-esplora-dati') {
-                        // Ricarichiamo dal db ogni volta che entra per freschezza
-                        loadInsights(); 
+                    if (targetId === 'view-ai') targetSection.style.display = 'flex';
+
+                    if (targetId === 'view-esplora-dati') {
+                        await loadInsights();
                         renderInsights(allInsights, insightsGrid, true);
-                        if(searchInput) searchInput.value = '';
+                        if (searchInput) searchInput.value = '';
                     }
-                    if(targetId === 'view-classifica') renderLeaderboards();
-                    if(targetId === 'view-profilo') renderProfile();
+                    if (targetId === 'view-classifica') renderLeaderboards();
+                    if (targetId === 'view-profilo')    renderProfile();
                 }
             });
         });
 
-        // --- FORM LOGIC (Insert in Supabase) ---
-        if(form) {
+        // ─── INSIGHT FORM ────────────────────────────────────────────────────
+        if (form) {
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const originalBtnText = submitBtn.innerHTML;
+                const origHtml = submitBtn.innerHTML;
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Salvataggio...';
 
-                const titleVal = document.getElementById('title').value.trim();
-                const clientVal = document.getElementById('client').value.trim();
-                const catVal = document.getElementById('category').value.trim();
-                const teamVal = document.getElementById('team').value.trim();
-                const detailsVal = document.getElementById('details').value.trim();
+                const titleVal           = document.getElementById('title').value.trim();
+                const clientVal          = document.getElementById('client').value.trim();
+                const catVal             = document.getElementById('category').value.trim();
+                const teamVal            = document.getElementById('team').value.trim();
+                const detailsVal         = document.getElementById('details').value.trim();
                 const confidentialityVal = document.getElementById('confidentiality')?.value || 'pubblico';
-                
+
                 try {
-                    // INSERIMENTO REALE SUPABASE
-                    const { data: authData } = await supa.auth.getSession();
-                    const { data, error } = await supa
-                        .from('insights')
-                        .insert([
-                            { 
-                                title: titleVal, 
-                                client: clientVal, 
-                                category: catVal, 
-                                team: teamVal, 
-                                snippet: detailsVal, 
-                                author_email: currentUser,
-                                author_id: authData?.session?.user?.id || null,
-                                upvotes: 0,
-                                confidentiality: confidentialityVal
-                            }
-                        ]);
+                    const { error } = await supa.from('insights').insert([{
+                        title:           titleVal,
+                        client:          clientVal,
+                        category:        catVal,
+                        team:            teamVal,
+                        snippet:         detailsVal,
+                        author_email:    currentUser,
+                        author_id:       currentUserId,
+                        upvotes:         0,
+                        confidentiality: confidentialityVal
+                    }]);
+                    if (error) throw error;
 
-                if (error) throw error;
+                    showToast(
+                        'Insight Inviato!',
+                        `Hai guadagnato <strong class="highlight">+50 punti</strong> per il tuo contributo.`,
+                        'fa-check-circle'
+                    );
+                    form.reset();
 
-                showToast(
-                "Insight Inviato!",
-                `Hai guadagnato <strong class="highlight">+50 punti</strong> per il tuo contributo.`,
-                "fa-check-circle"
-                );
+                    if (clientVal && !dbClients.includes(clientVal)) {
+                        await supa.from('clients').insert([{ name: clientVal }]);
+                        await populateDatalists();
+                    }
 
-                form.reset();
+                    await loadInsights();
 
-                if (clientVal && !dbClients.includes(clientVal)) {
-                await supa.from('clients').insert([{ name: clientVal }]).single();
-                populateDatalists();
-                }
-
-                await loadInsights();
-
-                animateValue(totalPointsEl, 0, points, 800);
-                updateProgressBar();
-
-                const esploraLink = document.querySelector('[data-target="view-esplora-dati"]');
-                if(esploraLink) esploraLink.click();
+                    const esploraLink = document.querySelector('[data-target="view-esplora-dati"]');
+                    if (esploraLink) esploraLink.click();
 
                 } catch (err) {
-                    console.error("Errore salvataggio:", err);
-                    alert("ERRORE DATABASE: " + (err.message || JSON.stringify(err)) + "\n\nSe dice 'relation insights does not exist' significa che non hai creato la tabella su Supabase! Se dice 'new row violates row-level security' devi disabilitare RLS sulla tabella.");
-                    showToast("Errore di Salvataggio", "C'è stato un problema nel salvare l'insight nel database. Riprova.", "fa-xmark", false);
+                    console.error('Salvataggio insight:', err);
+                    showToast('Errore di Salvataggio', err.message || 'Controlla la console.', 'fa-xmark', false);
                 } finally {
-                    submitBtn.disabled = false; 
-                    submitBtn.innerHTML = originalBtnText;
+                    submitBtn.disabled  = false;
+                    submitBtn.innerHTML = origHtml;
                 }
             });
         }
 
-        // --- CARD RENDERER (Con Anonimato) ---
+        // ─── RENDER INSIGHTS ──────────────────────────────────────────────────
+        /**
+         * forceAnonymous = true  → vista Esplora (anonimato per consulenti base)
+         * forceAnonymous = false → vista Profilo (l'utente vede i propri insight con dati completi)
+         */
         function renderInsights(insights, container, forceAnonymous = false) {
-            if(!container) return;
+            if (!container) return;
             container.innerHTML = '';
-            
-            if(insights.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1;">Nessun insight trovato. Sii il primo a inserirne uno!</p>';
+
+            if (insights.length === 0) {
+                container.innerHTML =
+                    '<p style="color:var(--text-muted);grid-column:1/-1;">Nessun insight trovato. Sii il primo a inserirne uno!</p>';
                 return;
             }
 
             insights.forEach(insight => {
-                const card = document.createElement('div');
+                const card    = document.createElement('div');
                 card.className = 'insight-card';
-                
-                // Formatta Data
-                const dateObj = new Date(insight.created_at);
-                const dateStr = isNaN(dateObj) ? "Data sconosciuta" : dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 
-                // Anonimato: i team_leader+ vedono gli autori; consulenti base vedono anonimo
-                const canSeeAuthor = !forceAnonymous || hasOrgRole('team_leader');
-                const rawAuthor = insight.author_email || insight.author || "Utente Sconosciuto";
-                const displayAuthor = canSeeAuthor ? rawAuthor : "Consulente (Anonimo)";
-                const avatarUrl = canSeeAuthor
-                    ? `https://ui-avatars.com/api/?name=${rawAuthor.replace('@','').replace('.',' ')}&background=1E293B&color=fff`
-                    : "https://ui-avatars.com/api/?name=C+A&background=1E293B&color=94A3B8";
+                const dateStr = formatDate(insight.created_at);
+                const conf    = insight.confidentiality || 'pubblico';
 
-                // Confidenzialità: badge e oscuramento cliente
-                const conf = insight.confidentiality || 'pubblico';
+                // Autore: team_leader+ vedono sempre l'autore; gli altri vedono anonimo nella vista Esplora
+                const showAuthor    = !forceAnonymous || canSeeAuthor();
+                const rawAuthor     = insight.author_email || insight.author || 'Utente Sconosciuto';
+                const displayAuthor = showAuthor ? rawAuthor : 'Consulente (Anonimo)';
+                const avatarName    = showAuthor
+                    ? rawAuthor.replace('@', ' ').replace('.', ' ')
+                    : 'CA';
+                const avatarUrl     = `https://ui-avatars.com/api/?name=${encodeURIComponent(avatarName)}&background=1E293B&color=fff`;
+
+                // Cliente: riservato → anonimo per consulenti base; segreto → già filtrato dal DB
+                const canSeeClient  = conf !== 'riservato' || hasOrgRole('team_leader');
+                const displayClient = canSeeClient ? (insight.client || 'N/A') : 'Cliente Riservato';
+
+                // Badge confidenzialità
                 const confBadge = conf === 'segreto'
                     ? `<span class="badge" style="background:rgba(239,68,68,0.1);color:#EF4444;font-size:0.7rem;"><i class="fa-solid fa-lock"></i> Segreto</span>`
                     : conf === 'riservato'
                     ? `<span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;font-size:0.7rem;"><i class="fa-solid fa-eye-slash"></i> Riservato</span>`
                     : '';
-                const displayClient = conf === 'riservato' ? 'Cliente Riservato' : (insight.client || 'N/A');
 
                 // Upvote
-                const isMyInsight = (insight.author_email || insight.author) === currentUser;
-                const alreadyUpvoted = myUpvotedIds.has(insight.id);
+                const isMyInsight   = rawAuthor === currentUser;
+                const alreadyVoted  = myUpvotedIds.has(insight.id);
                 let upvoteHtml;
                 if (isMyInsight) {
-                    upvoteHtml = `<span style="font-size: 0.8rem; color: var(--text-muted);"><i class="fa-solid fa-check"></i> Utile (${insight.upvotes || 0})</span>`;
-                } else if (alreadyUpvoted) {
-                    upvoteHtml = `<button class="btn-upvote upvoted" data-id="${insight.id}" disabled><i class="fa-solid fa-check-double"></i> Utile <span class="upvote-count">(${insight.upvotes || 0})</span></button>`;
+                    upvoteHtml = `<span style="font-size:0.8rem;color:var(--text-muted);">
+                        <i class="fa-solid fa-check"></i> Utile (${insight.upvotes || 0})</span>`;
+                } else if (alreadyVoted) {
+                    upvoteHtml = `<button class="btn-upvote upvoted" data-id="${insight.id}" disabled>
+                        <i class="fa-solid fa-check-double"></i> Utile
+                        <span class="upvote-count">(${insight.upvotes || 0})</span></button>`;
                 } else {
-                    upvoteHtml = `<button class="btn-upvote" data-id="${insight.id}"><i class="fa-solid fa-check"></i> Utile <span class="upvote-count">(${insight.upvotes || 0})</span></button>`;
+                    upvoteHtml = `<button class="btn-upvote" data-id="${insight.id}">
+                        <i class="fa-solid fa-check"></i> Utile
+                        <span class="upvote-count">(${insight.upvotes || 0})</span></button>`;
                 }
 
-                // Elimina: autore, oppure responsabile+
-                const canDelete = isMyInsight || hasOrgRole('responsabile');
-                const deleteHtml = canDelete
-                    ? `<button class="btn-delete-insight" data-id="${insight.id}" style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);padding:0.35rem 0.75rem;border-radius:var(--radius-full);font-size:0.8rem;display:flex;align-items:center;gap:0.4rem;" title="Elimina insight"><i class="fa-solid fa-trash-can"></i></button>`
+                // Elimina: autore o responsabile+
+                const deleteHtml = canDeleteInsight(insight)
+                    ? `<button class="btn-delete-insight" data-id="${insight.id}"
+                        style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);
+                               padding:0.35rem 0.75rem;border-radius:var(--radius-full);font-size:0.8rem;
+                               display:flex;align-items:center;gap:0.4rem;" title="Elimina insight">
+                        <i class="fa-solid fa-trash-can"></i></button>`
+                    : '';
+
+                // Badge ruolo autore (visibile solo a team_leader+)
+                const authorRoleBadge = showAuthor && insight.author_org_role
+                    ? (() => {
+                        const rc = ROLE_COLORS[insight.author_org_role] || {};
+                        const rl = ROLE_LABELS[insight.author_org_role] || '';
+                        return rl ? `<span style="font-size:0.7rem;padding:0.1rem 0.5rem;
+                            border-radius:var(--radius-full);background:${rc.bg};color:${rc.color};">${rl}</span>` : '';
+                    })()
                     : '';
 
                 card.innerHTML = `
@@ -621,208 +667,186 @@
                     <div class="card-footer">
                         <div class="card-author">
                             <img src="${avatarUrl}" alt="Author">
-                            <span>${displayAuthor} • ${dateStr}</span>
+                            <div style="display:flex;flex-direction:column;gap:0.2rem;">
+                                <span>${displayAuthor} • ${dateStr}</span>
+                                ${authorRoleBadge}
+                            </div>
                         </div>
-                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
                             ${upvoteHtml}
                             ${deleteHtml}
                         </div>
                     </div>
                 `;
                 container.appendChild(card);
+            });
 
-            }); // fine forEach insights
-            // Gestione UPVOTE (Update in Supabase)
-            container.querySelectorAll('.btn-upvote').forEach(btn => {
-                btn.addEventListener('click', async function() {
-                    if(this.classList.contains('upvoted')) return;
-                    
-                    const id = this.getAttribute('data-id');
-                    const targetInsight = allInsights.find(i => i.id == id);
-                    if(!targetInsight) return;
+            // ── Upvote handler ────────────────────────────────────────────────
+            container.querySelectorAll('.btn-upvote:not([disabled])').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const id            = this.getAttribute('data-id');
+                    const targetInsight = allInsights.find(i => i.id === id);
+                    if (!targetInsight) return;
 
                     const newUpvotes = (targetInsight.upvotes || 0) + 1;
-                    
-                    // Ottimistica
                     this.classList.add('upvoted');
-                    const countSpan = this.querySelector('.upvote-count');
-                    countSpan.textContent = `(${newUpvotes})`;
+                    this.disabled = true;
                     this.innerHTML = `<i class="fa-solid fa-check-double"></i> Utile <span class="upvote-count">(${newUpvotes})</span>`;
-                    
                     targetInsight.upvotes = newUpvotes;
 
-                    // Update Supabase
                     try {
                         await supa.from('insights').update({ upvotes: newUpvotes }).eq('id', id);
-                        // Salva l'upvote in modo persistente
                         await supa.from('user_upvotes').insert([{ user_email: currentUser, insight_id: id }]);
                         myUpvotedIds.add(id);
-                        showToast("Feedback Registrato", `Hai validato questa informazione. L'autore riceverà <strong class="highlight">+10 punti</strong>.`, "fa-check-double", true);
+                        showToast(
+                            'Feedback Registrato',
+                            `Hai validato questa informazione. L'autore riceverà <strong class="highlight">+10 punti</strong>.`,
+                            'fa-check-double'
+                        );
                     } catch (err) {
-                        console.error("Errore upvote", err);
+                        console.error('Upvote error:', err);
                     }
                 });
             });
 
-            // Gestione ELIMINA INSIGHT
+            // ── Elimina handler ───────────────────────────────────────────────
             container.querySelectorAll('.btn-delete-insight').forEach(btn => {
-                btn.addEventListener('click', async function() {
+                btn.addEventListener('click', async function () {
                     const id = this.getAttribute('data-id');
                     if (!confirm('Sei sicuro di voler eliminare questo insight?')) return;
-                    
                     try {
                         const { error } = await supa.from('insights').delete().eq('id', id);
                         if (error) throw error;
-                        
-                        // Rimuovi dalla lista locale
-                        allInsights = allInsights.filter(i => i.id != id);
-                        showToast("Insight Eliminato", "L'insight è stato rimosso dal database.", "fa-trash-can");
-                        
-                        // Ricarica la vista profilo
+                        allInsights = allInsights.filter(i => i.id !== id);
+                        showToast('Insight Eliminato', 'L\'insight è stato rimosso dal database.', 'fa-trash-can');
                         renderProfile();
+                        const esploraView = document.getElementById('view-esplora-dati');
+                        if (esploraView && esploraView.classList.contains('active'))
+                            renderInsights(allInsights, insightsGrid, true);
                     } catch (err) {
-                        console.error('Errore eliminazione:', err);
-                        showToast("Errore", "Impossibile eliminare l'insight.", "fa-triangle-exclamation", false);
+                        showToast('Errore', 'Impossibile eliminare l\'insight.', 'fa-triangle-exclamation', false);
                     }
                 });
             });
         }
 
-        if(searchInput) {
+        // ─── SEARCH ───────────────────────────────────────────────────────────
+        if (searchInput) {
             searchInput.addEventListener('input', (e) => {
-                const query = e.target.value.toLowerCase().trim();
-                if(query === '') { renderInsights(allInsights, insightsGrid, true); return; }
-                const filtered = allInsights.filter(insight => {
-                    return (insight.title || '').toLowerCase().includes(query) || 
-                           (insight.client || '').toLowerCase().includes(query) ||
-                           (insight.category || '').toLowerCase().includes(query) || 
-                           (insight.team || '').toLowerCase().includes(query) ||
-                           (insight.snippet || '').toLowerCase().includes(query);
-                });
+                const q = e.target.value.toLowerCase().trim();
+                if (!q) { renderInsights(allInsights, insightsGrid, true); return; }
+                const filtered = allInsights.filter(i =>
+                    [i.title, i.client, i.category, i.team, i.snippet]
+                        .some(f => (f || '').toLowerCase().includes(q))
+                );
                 renderInsights(filtered, insightsGrid, true);
             });
         }
 
-        // --- LEADERBOARD & PROFILE ---
+        // ─── PROFILO ──────────────────────────────────────────────────────────
+        function renderProfile() {
+            // Stats
+            const myInsights     = allInsights.filter(i => (i.author_email || i.author) === currentUser);
+            const myUpvotesTotal = myInsights.reduce((s, i) => s + (i.upvotes || 0), 0);
+            const realPoints     = (myInsights.length * 50) + (myUpvotesTotal * 10);
+            points = realPoints;
+
+            if (profileTotalPoints)   profileTotalPoints.textContent   = realPoints;
+            if (profileTotalInsights) profileTotalInsights.textContent = myInsights.length;
+            if (profileTotalUpvotes)  profileTotalUpvotes.textContent  = myUpvotesTotal;
+            totalPointsEls.forEach(el => { el.textContent = realPoints; });
+
+            // I miei insight (vista privata — mostra autore reale)
+            if (profileInsightsGrid) renderInsights(myInsights, profileInsightsGrid, false);
+
+            // Team
+            loadUserTeams();
+        }
+
+        // ─── LEADERBOARD ─────────────────────────────────────────────────────
         function renderLeaderboards() {
-            if(allInsights.length === 0) {
-                leaderboardInd.innerHTML = '';
-                leaderboardTeams.innerHTML = '';
+            if (!leaderboardInd || !leaderboardTeams || allInsights.length === 0) {
+                if (leaderboardInd)   leaderboardInd.innerHTML   = '<li style="color:var(--text-muted);padding:1rem;">Nessun dato disponibile.</li>';
+                if (leaderboardTeams) leaderboardTeams.innerHTML = '<li style="color:var(--text-muted);padding:1rem;">Nessun dato disponibile.</li>';
                 return;
             }
-            if(!leaderboardInd || !leaderboardTeams) return;
+
+            // ── Individuale ───────────────────────────────────────────────────
             const userScores = {};
             allInsights.forEach(i => {
                 const author = i.author_email || i.author || 'Anonimo';
-                if(!userScores[author]) userScores[author] = { points: 0, insights: 0 };
-                userScores[author].points += 50 + ((i.upvotes || 0) * 10);
+                if (!userScores[author]) userScores[author] = { points: 0, insights: 0 };
+                userScores[author].points  += 50 + ((i.upvotes || 0) * 10);
                 userScores[author].insights += 1;
             });
 
-            // Aggiungi l'utente corrente solo se ha davvero inserito insight
-            if(currentUser && !userScores[currentUser] && points > 0) {
-                userScores[currentUser] = { points, insights: allInsights.filter(i => (i.author_email || i.author) === currentUser).length };
-            }
-
-            leaderboardInd.innerHTML = Object.keys(userScores)
-                .map(u => ({ name: u, ...userScores[u] }))
-                .sort((a, b) => b.points - a.points).slice(0, 10)
-                .map((u, idx) => `
-                <li class="leaderboard-item rank-${idx+1}">
-                    <div class="rank-info">
-                        <div class="rank-number">${idx+1}</div>
-                        <div class="player-details">
-                            <img src="https://ui-avatars.com/api/?name=${u.name.replace(' ', '+')}&background=1E293B&color=fff" alt="${u.name}">
-                            <div><span class="player-name">${u.name}</span><span class="player-team">${u.insights} Insight condivisi</span></div>
+            leaderboardInd.innerHTML = Object.entries(userScores)
+                .map(([name, s]) => ({ name, ...s }))
+                .sort((a, b) => b.points - a.points)
+                .slice(0, 10)
+                .map((u, idx) => {
+                    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`;
+                    const isMe  = u.name === currentUser;
+                    return `
+                    <li class="leaderboard-item rank-${idx + 1}" style="${isMe ? 'background:rgba(59,130,246,0.06);border-radius:var(--radius-md);' : ''}">
+                        <div class="rank-info">
+                            <div class="rank-number">${medal}</div>
+                            <div class="player-details">
+                                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=1E293B&color=fff" alt="${u.name}">
+                                <div>
+                                    <span class="player-name">${isMe ? `<strong>${u.name}</strong> <span style="font-size:0.75rem;color:var(--accent-primary)">(tu)</span>` : u.name}</span>
+                                    <span class="player-team">${u.insights} insight condivisi</span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="score-badge">${u.points} pt</div>
-                </li>`).join('');
+                        <div class="score-badge">${u.points} pt</div>
+                    </li>`;
+                }).join('');
 
+            // ── Team ─────────────────────────────────────────────────────────
             const teamScores = {};
             allInsights.forEach(i => {
                 const t = i.team || 'Senza Team';
-                if(!teamScores[t]) teamScores[t] = { points: 0, insightCount: 0 };
+                if (!teamScores[t]) teamScores[t] = { points: 0, count: 0 };
                 teamScores[t].points += 50 + ((i.upvotes || 0) * 10);
-                teamScores[t].insightCount += 1;
+                teamScores[t].count  += 1;
             });
 
-            leaderboardTeams.innerHTML = Object.keys(teamScores)
-                .map(t => ({ name: t, ...teamScores[t] }))
-                .sort((a, b) => b.points - a.points).slice(0, 5)
+            leaderboardTeams.innerHTML = Object.entries(teamScores)
+                .map(([name, s]) => ({ name, ...s }))
+                .sort((a, b) => b.points - a.points)
+                .slice(0, 5)
                 .map((t, idx) => `
-                <li class="leaderboard-item rank-${idx+1}">
+                <li class="leaderboard-item rank-${idx + 1}">
                     <div class="rank-info">
-                        <div class="rank-number">${idx+1}</div>
+                        <div class="rank-number">${idx + 1}</div>
                         <div class="player-details">
-                            <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); display:flex; align-items:center; justify-content:center; color: var(--success); font-size: 1.2rem;"><i class="fa-solid fa-users"></i></div>
-                            <div><span class="player-name">${t.name}</span><span class="player-team">${t.insightCount} Insight validati</span></div>
+                            <div style="width:36px;height:36px;border-radius:8px;background:rgba(16,185,129,0.1);
+                                        display:flex;align-items:center;justify-content:center;
+                                        color:var(--success);font-size:1.2rem;">
+                                <i class="fa-solid fa-users"></i>
+                            </div>
+                            <div>
+                                <span class="player-name">${t.name}</span>
+                                <span class="player-team">${t.count} insight condivisi</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="score-badge" style="color: var(--success); background: rgba(16, 185, 129, 0.1);">${t.points} pt</div>
+                    <div class="score-badge" style="color:var(--success);background:rgba(16,185,129,0.1);">${t.points} pt</div>
                 </li>`).join('');
         }
 
-        function renderProfileStats() {
-
-            // Insight reali dell'utente
-            const myInsights = allInsights.filter(
-                i => (i.author_email || i.author) === currentUser
-            );
-
-            // Totale upvotes reali
-            const myUpvotes = myInsights.reduce(
-                (sum, i) => sum + (i.upvotes || 0),
-                0
-            );
-
-            // Calcolo reale punti
-            const realTotalPoints =
-                (myInsights.length * 50) +
-                (myUpvotes * 10);
-
-            // RESET DIRETTO UI
-            if(profileTotalPoints) {
-                profileTotalPoints.textContent = realTotalPoints || 0;
-            }
-
-            if(profileTotalInsights) {
-                profileTotalInsights.textContent = myInsights.length || 0;
-            }
-
-            if(profileTotalUpvotes) {
-                profileTotalUpvotes.textContent = myUpvotes || 0;
-            }
-
-            // Aggiorna variabili globali
-            points = realTotalPoints;
-        }
-
-        function renderProfile() {
-            renderProfileStats();
-            loadUserTeams();
-            
-            const myInsights = allInsights.filter(
-                i => (i.author_email || i.author) === currentUser
-            );
-            if (profileInsightsGrid) {
-                renderInsights(myInsights, profileInsightsGrid, false);
-            }
-        }
-
-        // --- TEAM MANAGEMENT ---
+        // ─── TEAM MANAGEMENT ─────────────────────────────────────────────────
         async function loadUserTeams() {
-            const teamsGrid = document.getElementById('teams-grid');
+            const teamsGrid  = document.getElementById('teams-grid');
             const noTeamsMsg = document.getElementById('no-teams-msg');
             if (!teamsGrid) return;
 
             try {
-                // 1. Trova tutti i team_id di cui l'utente è membro
                 const { data: memberships, error: memErr } = await supa
                     .from('team_members')
                     .select('team_id')
                     .eq('user_email', currentUser);
-
                 if (memErr) throw memErr;
 
                 if (!memberships || memberships.length === 0) {
@@ -833,44 +857,40 @@
                 if (noTeamsMsg) noTeamsMsg.style.display = 'none';
 
                 const teamIds = memberships.map(m => m.team_id);
-
-                // 2. Carica i dettagli dei team
                 const { data: teams, error: teamErr } = await supa
-                    .from('teams')
-                    .select('*')
-                    .in('id', teamIds);
-
+                    .from('teams').select('*').in('id', teamIds);
                 if (teamErr) throw teamErr;
 
-                // 3. Carica tutti i membri dei team trovati
-                const { data: allMembers, error: allMemErr } = await supa
-                    .from('team_members')
-                    .select('*')
-                    .in('team_id', teamIds);
+                const { data: allMembers } = await supa
+                    .from('team_members').select('*').in('team_id', teamIds);
 
-                if (allMemErr) throw allMemErr;
-
-                // 4. Renderizza le card
                 teamsGrid.innerHTML = teams.map(team => {
-                    const members = allMembers.filter(m => m.team_id === team.id);
+                    const members = (allMembers || []).filter(m => m.team_id === team.id);
                     const membersHtml = members.map(m => {
                         const name = m.user_name || m.user_email.split('@')[0];
-                        return `<div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0;">
-                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1E293B&color=fff&size=28" style="width: 28px; height: 28px; border-radius: 50%;">
-                            <span style="font-size: 0.85rem; color: var(--text-secondary);">${name}</span>
+                        return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;">
+                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1E293B&color=fff&size=28"
+                                 style="width:28px;height:28px;border-radius:50%;">
+                            <span style="font-size:0.85rem;color:var(--text-secondary);">${name}</span>
                         </div>`;
                     }).join('');
 
-                    return `<div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 1.5rem; transition: var(--transition);"
-                        onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--shadow-lg)'"
-                        onmouseout="this.style.transform='none'; this.style.boxShadow='none'">
-                        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-color);">
-                            <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(59, 130, 246, 0.1); display: flex; align-items: center; justify-content: center; color: var(--accent-primary); font-size: 1.1rem;">
+                    return `<div style="background:var(--bg-surface);border:1px solid var(--border-color);
+                                border-radius:var(--radius-lg);padding:1.5rem;transition:var(--transition);"
+                                onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='var(--shadow-lg)'"
+                                onmouseout="this.style.transform='none';this.style.boxShadow='none'">
+                        <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;
+                                    padding-bottom:0.75rem;border-bottom:1px solid var(--border-color);">
+                            <div style="width:40px;height:40px;border-radius:10px;background:rgba(59,130,246,0.1);
+                                        display:flex;align-items:center;justify-content:center;
+                                        color:var(--accent-primary);font-size:1.1rem;">
                                 <i class="fa-solid fa-users"></i>
                             </div>
                             <div>
-                                <h4 style="color: var(--text-primary); font-size: 1rem;">${team.name}</h4>
-                                <span style="font-size: 0.75rem; color: var(--text-muted);">${members.length} membr${members.length === 1 ? 'o' : 'i'}</span>
+                                <h4 style="color:var(--text-primary);font-size:1rem;">${team.name}</h4>
+                                <span style="font-size:0.75rem;color:var(--text-muted);">
+                                    ${members.length} membr${members.length === 1 ? 'o' : 'i'}
+                                </span>
                             </div>
                         </div>
                         <div>${membersHtml}</div>
@@ -878,21 +898,20 @@
                 }).join('');
 
             } catch (err) {
-                console.error('Errore caricamento team:', err);
-                teamsGrid.innerHTML = '<p style="color: var(--danger);">Errore nel caricamento dei team.</p>';
+                console.error('loadUserTeams:', err);
+                teamsGrid.innerHTML = '<p style="color:var(--danger);">Errore nel caricamento dei team.</p>';
             }
         }
 
-        // Gestione creazione team
-        const createTeamBtn = document.getElementById('create-team-btn');
+        const createTeamBtn  = document.getElementById('create-team-btn');
         const createTeamForm = document.getElementById('create-team-form');
-        const cancelTeamBtn = document.getElementById('cancel-team-btn');
-        const saveTeamBtn = document.getElementById('save-team-btn');
+        const cancelTeamBtn  = document.getElementById('cancel-team-btn');
+        const saveTeamBtn    = document.getElementById('save-team-btn');
 
         if (createTeamBtn && createTeamForm) {
             createTeamBtn.addEventListener('click', () => {
                 createTeamForm.style.display = 'block';
-                createTeamBtn.style.display = 'none';
+                createTeamBtn.style.display  = 'none';
             });
         }
         if (cancelTeamBtn) {
@@ -903,296 +922,246 @@
         }
         if (saveTeamBtn) {
             saveTeamBtn.addEventListener('click', async () => {
-                const teamName = document.getElementById('new-team-name')?.value.trim();
+                const teamName    = document.getElementById('new-team-name')?.value.trim();
                 const membersText = document.getElementById('new-team-members')?.value.trim();
-
                 if (!teamName) { alert('Inserisci un nome per il team'); return; }
 
                 saveTeamBtn.disabled = true;
                 saveTeamBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creazione...';
 
                 try {
-                    // 1. Crea il team
                     const { data: newTeam, error: teamErr } = await supa
                         .from('teams')
                         .insert([{ name: teamName, created_by: currentUser }])
-                        .select()
-                        .single();
-
+                        .select().single();
                     if (teamErr) throw teamErr;
 
-                    // 2. Prepara la lista membri (il creatore + quelli inseriti)
                     const { data: { session: s } } = await supa.auth.getSession();
-                    const creatorMeta = s?.user?.user_metadata || {};
-                    const creatorName = (creatorMeta.first_name && creatorMeta.last_name)
-                        ? `${creatorMeta.first_name} ${creatorMeta.last_name}`
+                    const meta        = s?.user?.user_metadata || {};
+                    const creatorName = (meta.first_name && meta.last_name)
+                        ? `${meta.first_name} ${meta.last_name}`
                         : currentUser.split('@')[0];
 
                     const membersToInsert = [{ team_id: newTeam.id, user_email: currentUser, user_name: creatorName }];
-
                     if (membersText) {
-                        const emails = membersText.split('\n').map(e => e.trim()).filter(e => e && e.includes('@'));
-                        emails.forEach(email => {
-                            if (email !== currentUser) {
-                                membersToInsert.push({ team_id: newTeam.id, user_email: email, user_name: email.split('@')[0] });
-                            }
-                        });
+                        membersText.split('\n')
+                            .map(e => e.trim())
+                            .filter(e => e && e.includes('@') && e !== currentUser)
+                            .forEach(email => {
+                                membersToInsert.push({
+                                    team_id:    newTeam.id,
+                                    user_email: email,
+                                    user_name:  email.split('@')[0]
+                                });
+                            });
                     }
 
                     const { error: memErr } = await supa.from('team_members').insert(membersToInsert);
                     if (memErr) throw memErr;
 
-                    // 3. Reset form e ricarica
-                    document.getElementById('new-team-name').value = '';
+                    document.getElementById('new-team-name').value    = '';
                     document.getElementById('new-team-members').value = '';
                     createTeamForm.style.display = 'none';
                     if (createTeamBtn) createTeamBtn.style.display = 'flex';
 
-                    showToast("Team Creato!", `"${teamName}" è stato creato con ${membersToInsert.length} membr${membersToInsert.length === 1 ? 'o' : 'i'}.`, "fa-people-group");
-                    loadUserTeams();
+                    showToast(
+                        'Team Creato!',
+                        `"${teamName}" è stato creato con ${membersToInsert.length} membr${membersToInsert.length === 1 ? 'o' : 'i'}.`,
+                        'fa-people-group'
+                    );
+                    await loadUserTeams();
+                    await populateDatalists();
 
                 } catch (err) {
-                    console.error('Errore creazione team:', err);
-                    showToast("Errore", "Impossibile creare il team: " + err.message, "fa-triangle-exclamation", false);
+                    showToast('Errore', 'Impossibile creare il team: ' + err.message, 'fa-triangle-exclamation', false);
                 } finally {
-                    saveTeamBtn.disabled = false;
+                    saveTeamBtn.disabled  = false;
                     saveTeamBtn.innerHTML = '<i class="fa-solid fa-check"></i> Crea';
                 }
             });
         }
 
-        // --- AI ASSISTANT LOGIC (Call Vercel API with Groq) ---
-        if(chatForm) {
+        // ─── MAGIC INSERT AI ──────────────────────────────────────────────────
+        const aiParseBtn = document.getElementById('ai-parse-btn');
+        const aiRawText  = document.getElementById('ai-raw-text');
+
+        if (aiParseBtn && aiRawText) {
+            aiParseBtn.addEventListener('click', async () => {
+                const text = aiRawText.value.trim();
+                if (!text) return;
+
+                const origHtml = aiParseBtn.innerHTML;
+                aiParseBtn.innerHTML  = '<i class="fa-solid fa-spinner fa-spin"></i> Elaborazione...';
+                aiParseBtn.disabled   = true;
+
+                try {
+                    const res = await fetch('/api/parse-insight', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text })
+                    });
+                    if (!res.ok) throw new Error('Errore API');
+                    const data = await res.json();
+
+                    document.getElementById('title').value    = data.title    || '';
+                    document.getElementById('client').value   = data.client   || '';
+                    document.getElementById('category').value = data.category || '';
+                    document.getElementById('team').value     = data.team     || '';
+                    document.getElementById('details').value  = data.snippet  || '';
+
+                    showToast('Magia completata', 'Controlla i dati estratti e clicca Invia Insight', 'fa-wand-magic-sparkles');
+                } catch (err) {
+                    showToast('Errore', 'Impossibile analizzare il testo', 'fa-triangle-exclamation', false);
+                } finally {
+                    aiParseBtn.innerHTML = origHtml;
+                    aiParseBtn.disabled  = false;
+                }
+            });
+        }
+
+        // ─── MICROPHONE ───────────────────────────────────────────────────────
+        const micBtn = document.getElementById('ai-mic-btn');
+        let mediaRecorder = null;
+        let audioChunks   = [];
+        let isRecording   = false;
+
+        if (micBtn) {
+            micBtn.addEventListener('click', async () => {
+                if (!isRecording) {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        mediaRecorder = new MediaRecorder(stream);
+                        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                        mediaRecorder.onstop = async () => {
+                            micBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                            const blob   = new Blob(audioChunks, { type: 'audio/webm' });
+                            audioChunks  = [];
+                            const reader = new FileReader();
+                            reader.readAsDataURL(blob);
+                            reader.onloadend = async () => {
+                                try {
+                                    const res = await fetch('/api/transcribe', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ audioBase64: reader.result })
+                                    });
+                                    if (!res.ok) throw new Error('Errore trascrizione');
+                                    const data = await res.json();
+                                    const cur  = aiRawText.value;
+                                    aiRawText.value = cur ? cur + ' ' + data.text : data.text;
+                                    showToast('Trascrizione pronta', 'Puoi modificare il testo o cliccare Analizza Appunti', 'fa-comment-dots');
+                                } catch (err) {
+                                    showToast('Errore API Audio', 'Assicurati di essere in cloud', 'fa-microphone-slash', false);
+                                } finally {
+                                    micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+                                    micBtn.classList.remove('recording');
+                                }
+                            };
+                        };
+                        mediaRecorder.start();
+                        isRecording = true;
+                        micBtn.classList.add('recording');
+                        showToast('In ascolto...', 'Parla ora. Clicca di nuovo per terminare.', 'fa-microphone');
+                    } catch (err) {
+                        alert('Devi autorizzare il microfono per usare questa funzione.');
+                    }
+                } else {
+                    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                        mediaRecorder.stop();
+                        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+                    }
+                    isRecording = false;
+                }
+            });
+        }
+
+        // ─── AI CHAT ─────────────────────────────────────────────────────────
+        if (chatForm) {
             chatForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const text = chatInput.value.trim();
-                if(!text) return;
+                if (!text) return;
 
-                // Messaggio Utente
                 appendChatMessage('user', text);
                 chatInput.value = '';
-
-                // Typing Indicator
-                const typingId = appendTypingIndicator();
+                const typingId  = appendTypingIndicator();
                 chatHistory.scrollTop = chatHistory.scrollHeight;
 
                 try {
-                    // Chiamata alla Serverless Function (se su Vercel)
-                    // NOTA: Se si è in locale senza Vercel CLI, questa API potrebbe dare 404,
-                    // in produzione funzionerà perfettamente.
                     const response = await fetch('/api/ask-brain', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ prompt: text })
                     });
-                    
-                    if (!response.ok) {
-                        throw new Error("Errore API Network: " + response.status);
-                    }
-
+                    if (!response.ok) throw new Error('Errore API ' + response.status);
                     const data = await response.json();
-                    
-                    document.getElementById(typingId).remove();
-                    
-                    // Converte Markdown a HTML basico se necessario, oppure Groq risponde già formattato bene
-                    const formattedAnswer = data.answer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                    appendChatMessage('ai', formattedAnswer);
-                    
-                } catch (error) {
-                    console.error("AI Error:", error);
-                    document.getElementById(typingId).remove();
-                    appendChatMessage('ai', "Si è verificato un errore di connessione al cervello aziendale. Assicurati che l'app sia deploiata su Vercel affinché l'API Groq funzioni.");
+                    document.getElementById(typingId)?.remove();
+                    const formatted = data.answer
+                        .replace(/\n/g, '<br>')
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    appendChatMessage('ai', formatted);
+                } catch (err) {
+                    document.getElementById(typingId)?.remove();
+                    appendChatMessage('ai',
+                        'Si è verificato un errore di connessione. Assicurati che l\'app sia su Vercel affinché l\'API funzioni.');
                 }
-
                 chatHistory.scrollTop = chatHistory.scrollHeight;
             });
         }
 
-        function appendChatMessage(sender, htmlContent) {
-            const div = document.createElement('div');
+        function appendChatMessage(sender, html) {
+            const div   = document.createElement('div');
             div.className = `chat-message ${sender}`;
-            const avatarIcon = sender === 'ai' ? 'fa-robot' : 'fa-user';
             div.innerHTML = `
-                <div class="msg-avatar"><i class="fa-solid ${avatarIcon}"></i></div>
-                <div class="msg-content">${htmlContent}</div>
-            `;
+                <div class="msg-avatar"><i class="fa-solid ${sender === 'ai' ? 'fa-robot' : 'fa-user'}"></i></div>
+                <div class="msg-content">${html}</div>`;
             chatHistory.appendChild(div);
         }
 
         function appendTypingIndicator() {
-            const id = 'typing-' + Date.now();
+            const id  = 'typing-' + Date.now();
             const div = document.createElement('div');
-            div.className = `chat-message ai`;
-            div.id = id;
+            div.className = 'chat-message ai';
+            div.id        = id;
             div.innerHTML = `
                 <div class="msg-avatar"><i class="fa-solid fa-robot"></i></div>
                 <div class="msg-content">
                     <div class="typing-indicator"><span></span><span></span><span></span></div>
-                </div>
-            `;
+                </div>`;
             chatHistory.appendChild(div);
             return id;
         }
 
-        function updateProgressBar() {
-            const percentage = Math.min((weeklyInsights / weeklyGoal) * 100, 100);
-            weeklyProgressEl.style.width = `${percentage}%`;
-            goalTextEl.textContent = `${weeklyInsights}/${weeklyGoal} Insight`;
-
-            if (weeklyInsights >= weeklyGoal) {
-                goalHintEl.innerHTML = `<i class="fa-solid fa-trophy" style="color: #F59E0B"></i> Hai raggiunto l'obiettivo settimanale! Ottimo lavoro.`;
-                goalHintEl.style.color = '#10B981';
-            } else {
-                const remaining = weeklyGoal - weeklyInsights;
-                goalHintEl.textContent = `Ancora ${remaining} insight per sbloccare il badge "Observer della Settimana"!`;
-            }
-        }
-
+        // ─── TOAST ───────────────────────────────────────────────────────────
         function showToast(title, message, iconClass, success = true) {
-            toastTitle.textContent = title;
-            toastMessage.innerHTML = message;
-            toastIconI.className = `fa-solid ${iconClass}`;
-            
-            if(!success) {
-                toast.style.borderLeftColor = "var(--accent-primary)";
-                toastIconI.style.color = "var(--accent-primary)";
-            } else {
-                toast.style.borderLeftColor = "var(--success)";
-                toastIconI.style.color = "var(--success)";
-            }
+            if (!toast) return;
+            toastTitle.textContent  = title;
+            toastMessage.innerHTML  = message;
+            toastIconI.className    = `fa-solid ${iconClass}`;
+            toast.style.borderLeftColor = success ? 'var(--success)' : 'var(--danger)';
+            toastIconI.style.color      = success ? 'var(--success)' : 'var(--danger)';
 
             toast.classList.remove('hidden');
-            void toast.offsetWidth; 
+            void toast.offsetWidth;
             toast.classList.add('show');
-
             setTimeout(() => {
                 toast.classList.remove('show');
-                setTimeout(() => {
-                    toast.classList.add('hidden');
-                }, 400);
+                setTimeout(() => toast.classList.add('hidden'), 400);
             }, 4000);
         }
 
-        function animateValue(obj, start, end, duration) {
-            if(!obj) return;
-            let startTimestamp = null;
-            const step = (timestamp) => {
-                if (!startTimestamp) startTimestamp = timestamp;
-                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-                obj.innerHTML = Math.floor(progress * (end - start) + start);
-                if (progress < 1) {
-                    window.requestAnimationFrame(step);
-                }
-            };
-            window.requestAnimationFrame(step);
-        }
-        
-        // --- FUNZIONI SUPABASE DATA FETCH ---
-    async function loadInsights() {
-    try {
-
-        const { data, error } = await supa
-            .from('insights')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error("Errore fetch Supabase:", error);
-            return;
+        // ─── UTILS ───────────────────────────────────────────────────────────
+        function formatDate(iso) {
+            const d = new Date(iso);
+            return isNaN(d) ? 'Data sconosciuta'
+                : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
         }
 
-        // RESET SICURO
-        allInsights = data || [];
-
-        // -----------------------------
-        // CALCOLO STATS UTENTE
-        // -----------------------------
-
-        const now = new Date();
-
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay());
-        startOfWeek.setHours(0, 0, 0, 0);
-
-        const myInsights = allInsights.filter(
-            i => (i.author_email || i.author) === currentUser
-        );
-
-        weeklyInsights = myInsights.filter(
-            i => new Date(i.created_at) >= startOfWeek
-        ).length;
-
-        const myUpvotesTotal = myInsights.reduce(
-            (sum, i) => sum + (i.upvotes || 0),
-            0
-        );
-
-        // SINGLE SOURCE OF TRUTH
-        points = (myInsights.length * 50) + (myUpvotesTotal * 10);
-
-        // -----------------------------
-        // RESET UI
-        // -----------------------------
-
-        if (totalPointsEl) {
-            totalPointsEl.textContent = points || 0;
-        }
-
-        if (profileTotalPoints) {
-            profileTotalPoints.textContent = points || 0;
-        }
-
-        if (profileTotalInsights) {
-            profileTotalInsights.textContent = myInsights.length || 0;
-        }
-
-        if (profileTotalUpvotes) {
-            profileTotalUpvotes.textContent = myUpvotesTotal || 0;
-        }
-
-        updateProgressBar();
-
-        // -----------------------------
-        // REFRESH VIEW
-        // -----------------------------
-
-        const esploraView = document.getElementById('view-esplora-dati');
-
-        if (esploraView && esploraView.classList.contains('active')) {
-            renderInsights(allInsights, insightsGrid, true);
-        }
-
-        // Aggiorna profile view se aperta
-        const profileView = document.getElementById('view-profilo');
-
-        if (profileView && profileView.classList.contains('active')) {
-            renderProfile();
-        }
-
-        // Aggiorna leaderboard se aperta
-        const leaderboardView = document.getElementById('view-classifica');
-
-        if (leaderboardView && leaderboardView.classList.contains('active')) {
-            renderLeaderboards();
-        }
-
-    } catch (e) {
-
-        console.error("Errore caricamento DB:", e);
-
-        // FAILSAFE RESET
-        allInsights = [];
-        points = 0;
-        weeklyInsights = 0;
-
-        if (totalPointsEl) totalPointsEl.textContent = 0;
-    }
-    }
-
-        // I dati ora vengono caricati da updateAuthState() quando l'utente si logga
-
-    } catch(err) {
-        document.body.innerHTML += `<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;padding:20px;z-index:99999;">JS ERROR: ${err.message} <br> ${err.stack}</div>`;
+    } catch (err) {
+        document.body.innerHTML +=
+            `<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;padding:20px;z-index:99999;">
+                JS ERROR: ${err.message}<br>${err.stack}
+            </div>`;
         console.error(err);
     }
 })();
