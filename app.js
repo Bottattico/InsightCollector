@@ -3,8 +3,7 @@
 
     try {
         // --- INIZIALIZZA SUPABASE ---
-        const supa = window.supabase.createClient(window.NEXT_PUBLIC_SUPABASE_URL, window.NEXT_PUBLIC_SUPABASE_PUBISHABLE_KEY);
-
+        const supa = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
         // --- AUTHENTICATION LOGIC ---
         let isLoginMode = true;
         const authContainer = document.getElementById('auth-container');
