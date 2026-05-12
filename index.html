@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTO Insight App</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- AUTHENTICATION OVERLAY -->
+    <div id="auth-container" class="auth-wrapper">
+        <div class="auth-card">
+            <div class="logo" style="justify-content: center; margin-bottom: 2rem;">
+                <i class="fa-solid fa-brain"></i>
+                <span>BTO Insight App</span>
+            </div>
+            <h2 id="auth-title">Accedi al Cervello Aziendale</h2>
+            <form id="auth-form" style="margin-top: 1.5rem;">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="auth-email">Email</label>
+                    <input type="email" id="auth-email" required placeholder="tuo.nome@azienda.it">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label for="auth-password">Password</label>
+                    <input type="password" id="auth-password" required placeholder="••••••••">
+                </div>
+                <!-- Campi aggiuntivi visibili solo in Registrazione -->
+                <div class="form-group" id="auth-name-group" style="margin-bottom: 1rem; display: none;">
+                    <label for="auth-name">Nome</label>
+                    <input type="text" id="auth-name" placeholder="Mario">
+                </div>
+                <div class="form-group" id="auth-surname-group" style="margin-bottom: 1rem; display: none;">
+                    <label for="auth-surname">Cognome</label>
+                    <input type="text" id="auth-surname" placeholder="Rossi">
+                </div>
+                <div class="form-group" id="auth-role-group" style="margin-bottom: 1.5rem; display: none;">
+                    <label for="auth-role">Il tuo Ruolo in BTO</label>
+                    <select id="auth-role" style="width: 100%;">
+                        <optgroup label="— Consulenza —">
+                            <option value="consulente">Consulente</option>
+                            <option value="team_leader">Team Leader</option>
+                            <option value="engagement_manager">Engagement Manager</option>
+                            <option value="lead">Lead</option>
+                            <option value="practice_manager">Practice Manager</option>
+                            <option value="responsabile">Responsabile</option>
+                            <option value="bu_manager">BU Manager</option>
+                        </optgroup>
+                        <optgroup label="— Staff —">
+                            <option value="marketing">Marketing</option>
+                            <option value="sales">Sales</option>
+                            <option value="hr">HR</option>
+                            <option value="operations">Operations</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;" id="auth-submit-btn">Accedi</button>
+            </form>
+            <p class="auth-switch" style="text-align: center; margin-top: 1.5rem; font-size: 0.9rem; color: var(--text-secondary);">
+                Non hai un account? <a href="#" id="auth-switch-link" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">Registrati</a>
+            </p>
+            <div id="auth-error" style="color: var(--danger); font-size: 0.85rem; text-align: center; margin-top: 1rem; display: none;"></div>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div class="app-container" id="main-app" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fa-solid fa-brain"></i>
+                <span>BTO Insight App</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-target="view-nuovo-insight"><i class="fa-solid fa-plus-circle"></i> Nuovo Insight</a>
+                <a href="#" class="nav-item" data-target="view-esplora-dati"><i class="fa-solid fa-database"></i> Esplora Dati</a>
+                <a href="#" class="nav-item" data-target="view-ai" style="margin-bottom: 1rem; border: 1px solid var(--accent-primary); background: rgba(59, 130, 246, 0.05);"><i class="fa-solid fa-robot" style="color: var(--accent-primary);"></i> BTO Insight Brain</a>
+                <a href="#" class="nav-item" data-target="view-classifica"><i class="fa-solid fa-trophy"></i> Classifiche</a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="greeting">
+                    <h1 id="topbar-greeting">Buongiorno, Consulente</h1>
+                    <p>Cosa vuoi scoprire oggi?</p>
+                </div>
+                <div class="topbar-right" style="display: flex; align-items: center; gap: 1.5rem;">
+                    <div class="gamification-summary">
+                        <div class="points-badge" title="Punti totali">
+                            <i class="fa-solid fa-star"></i> <span id="total-points">150</span>
+                        </div>
+                    </div>
+                    
+                    <div class="user-profile" id="user-profile-btn" data-target="view-profilo" title="Visualizza Profilo" style="margin-top: 0; padding: 0.5rem; border: none; background: transparent;">
+                        <img src="https://ui-avatars.com/api/?name=User&background=3B82F6&color=fff" id="sidebar-avatar" alt="User">
+                        <div class="user-info">
+                            <span class="user-name" id="sidebar-name">Caricamento...</span>
+                            <span class="user-role" id="sidebar-role">Consulente</span>
+                        </div>
+                    </div>
+
+                    <button id="logout-btn" class="btn-secondary" style="color: var(--danger); border-color: rgba(239, 68, 68, 0.2); padding: 0.5rem 1rem;" title="Logout">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </header>
+            
+            <!-- VISTA 0: ASSISTENTE AI -->
+            <div id="view-ai" class="view-section hidden" style="height: 100%; display: none; flex-direction: column;">
+                <header class="topbar">
+                    <div class="greeting">
+                        <h1>BTO Insight Brain</h1>
+                        <p>Il tuo assistente virtuale istruito su tutta la conoscenza aziendale.</p>
+                    </div>
+                </header>
+
+                <div class="chat-container">
+                    <div class="greeting" style="padding: 2rem 3rem 0;">
+                        <h1>BTO Insight Brain</h1>
+                        <p style="color: var(--text-secondary);">Fai una domanda per cercare tra la knowledge base aziendale.</p>
+                    </div>
+                    <div class="chat-history" id="chat-history">
+                        <!-- Messaggio di benvenuto -->
+                        <div class="chat-message ai">
+                            <div class="msg-avatar"><i class="fa-solid fa-robot"></i></div>
+                            <div class="msg-content">
+                                Ciao. Sono l'AI Senior Consultant di BTO. 
+                                Posso aiutarti a trovare casi studio simili, analizzare le problematiche di un cliente o estrarre insight dal nostro database reale. Come posso esserti utile oggi?
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-area">
+                        <form id="chat-form">
+                            <input type="text" id="chat-input" placeholder="Es. Sto lavorando per Luxottica per un problema X, ci sono aziende simili con problemi simili?" required autocomplete="off">
+                            <button type="submit" class="btn-primary" id="chat-submit-btn">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA 1: NUOVO INSIGHT -->
+            <div id="view-nuovo-insight" class="view-section active">
+                <header class="topbar">
+                    <div class="greeting">
+                        <h1>Condividi un nuovo Insight</h1>
+                        <p>Trasforma un'osservazione sul campo in valore aziendale.</p>
+                    </div>
+                    <div class="gamification-summary">
+                        <div class="points-badge">
+                            <i class="fa-solid fa-star"></i>
+                            <span id="total-points">150</span> Punti
+                        </div>
+                    </div>
+                </header>
+
+                <div class="content-wrapper">
+                    <section class="goal-section">
+                        <div class="goal-header">
+                            <h3>Obiettivo Settimanale</h3>
+                            <span id="goal-text">3/5 Insight</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="weekly-progress" style="width: 60%;"></div>
+                        </div>
+                        <p class="goal-hint">Ancora 2 insight per sbloccare il badge "Observer della Settimana"!</p>
+                    </section>
+
+                    <!-- MAGIC INSERT SECTION -->
+                    <section class="ai-generator-section" style="margin-bottom: 2rem; padding: 2rem; background: rgba(59, 130, 246, 0.05); border: 1px solid var(--accent-primary); border-radius: var(--radius-lg); position: relative; overflow: hidden;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                            <div>
+                                <h3 style="color: var(--accent-primary); font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Scatola Magica AI
+                                </h3>
+                                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.25rem;">Incolla appunti o dettali a voce. L'IA estrarrà e compilerà i dati per te.</p>
+                            </div>
+                        </div>
+                        
+                        <div style="position: relative; margin-bottom: 1rem;">
+                            <textarea id="ai-raw-text" rows="4" placeholder="Es. Oggi sono stato in Luxottica, abbiamo notato che il team Supply perde tempo a tracciare i colli..." style="width: 100%; padding-right: 3.5rem;"></textarea>
+                            <button type="button" id="ai-mic-btn" style="position: absolute; right: 0.5rem; top: 0.5rem; background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-secondary); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; z-index: 2;" title="Tieni premuto o clicca per parlare">
+                                <i class="fa-solid fa-microphone"></i>
+                            </button>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: flex-end;">
+                            <button type="button" id="ai-parse-btn" class="btn-primary" style="background: var(--bg-surface); border: 1px solid var(--accent-primary); color: var(--accent-primary);">
+                                <i class="fa-solid fa-bolt"></i> Analizza Appunti
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="form-section">
+                        <form id="insight-form" class="insight-form">
+                            <div class="form-row">
+                                <div class="form-group full-width">
+                                    <label for="title">Titolo dell'Insight</label>
+                                    <input type="text" id="title" placeholder="Es. Nuova esigenza del cliente sull'AI generativa..." required>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group half-width">
+                                    <label for="client">Cliente (Seleziona o scrivi un nuovo nome)</label>
+                                    <input list="client-list" id="client" placeholder="Cerca o inserisci cliente..." required autocomplete="off">
+                                    <datalist id="client-list"></datalist>
+                                </div>
+                                <div class="form-group half-width">
+                                    <label for="category">Categoria</label>
+                                    <input list="category-list" id="category" placeholder="Cerca o inserisci categoria..." required autocomplete="off">
+                                    <datalist id="category-list"></datalist>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group half-width">
+                                    <label for="team">Team di Progetto (Seleziona o crea nuovo)</label>
+                                    <input list="team-list" id="team" placeholder="Es. Team AI Transformation..." required autocomplete="off">
+                                    <datalist id="team-list"></datalist>
+                                </div>
+                                <div class="form-group half-width">
+                                    <label for="confidentiality">Livello di Confidenzialità</label>
+                                    <select id="confidentiality" required style="width:100%;padding:0.75rem;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--radius-md);color:var(--text-primary);font-size:0.9rem;">
+                                        <option value="pubblico">🟢 Pubblico — cliente visibile</option>
+                                        <option value="riservato">🟡 Riservato — cliente anonimo</option>
+                                        <option value="segreto">🔴 Segreto — solo per me</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group full-width">
+                                    <label for="details">Dettaglio dell'Insight</label>
+                                    <textarea id="details" rows="5" placeholder="Descrivi cosa hai osservato, perché è rilevante e come RELATECH potrebbe capitalizzare questa informazione..." required></textarea>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group full-width">
+                                    <label for="tags">Tag (separati da virgola)</label>
+                                    <input type="text" id="tags" placeholder="Es. AI, E-commerce, Supply Chain">
+                                </div>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="button" class="btn-secondary">Annulla</button>
+                                <button type="submit" class="btn-primary" id="submit-btn">
+                                    <span>Invia Insight</span>
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </section>
+                </div>
+            </div>
+
+            <!-- VISTA 2: ESPLORA DATI -->
+            <div id="view-esplora-dati" class="view-section hidden">
+                <header class="topbar">
+                    <div class="greeting">
+                        <h1>Esplora il Cervello Aziendale</h1>
+                        <p>Ricerca e consulta informazioni validate provenienti dai progetti RELATECH.</p>
+                    </div>
+                    <div class="search-container">
+                        <i class="fa-solid fa-search search-icon"></i>
+                        <input type="text" class="search-input" id="search-input" placeholder="Cerca per parola chiave, cliente, tag, team...">
+                    </div>
+                </header>
+
+                <div class="content-wrapper explore-wrapper">
+                    <!-- Note anonimato -->
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: rgba(59,130,246,0.1); border-radius: var(--radius-md); font-size: 0.85rem; color: var(--accent-primary);">
+                        <i class="fa-solid fa-user-secret"></i> <strong>Modalità Anonima Attiva:</strong> Per evitare bias e favorire una valutazione oggettiva della conoscenza, tutti gli insight sono mostrati in forma anonima.
+                    </div>
+                    <!-- Cards Grid -->
+                    <div class="insights-grid" id="insights-grid">
+                        <!-- Generato dinamicamente via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA 3: CLASSIFICHE -->
+            <div id="view-classifica" class="view-section hidden">
+                <header class="topbar">
+                    <div class="greeting">
+                        <h1>Classifiche Gamification</h1>
+                        <p>Scopri i colleghi e i team più collaborativi di RELATECH.</p>
+                    </div>
+                </header>
+
+                <div class="content-wrapper leaderboard-wrapper">
+                    <div class="leaderboard-grid">
+                        <div class="leaderboard-card">
+                            <div class="leaderboard-header">
+                                <h3><i class="fa-solid fa-user-astronaut"></i> Top Consulenti</h3>
+                                <span>Punti accumulati</span>
+                            </div>
+                            <ul class="leaderboard-list" id="leaderboard-individuals">
+                                <!-- Generato via JS -->
+                            </ul>
+                        </div>
+
+                        <div class="leaderboard-card">
+                            <div class="leaderboard-header">
+                                <h3><i class="fa-solid fa-users"></i> Top Team</h3>
+                                <span>Punti di Progetto</span>
+                            </div>
+                            <ul class="leaderboard-list" id="leaderboard-teams">
+                                <!-- Generato via JS -->
+                            </ul>
+                            <div class="leaderboard-note">
+                                <i class="fa-solid fa-circle-info"></i> I punti del team sono generati solo dagli insight taggati su quello specifico progetto.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA 4: PROFILO PERSONALE -->
+            <div id="view-profilo" class="view-section hidden">
+                <header class="topbar">
+                    <div class="greeting">
+                        <h1>Il mio Profilo</h1>
+                        <p>Gestisci le tue statistiche e rivedi i tuoi contributi.</p>
+                    </div>
+                </header>
+
+                <div class="content-wrapper profile-wrapper">
+                    <div class="profile-header-card">
+                        <img src="https://ui-avatars.com/api/?name=User&background=3B82F6&color=fff&size=120" id="profile-avatar-large" class="profile-avatar-large" alt="Utente">
+                        <div class="profile-details">
+                            <h2 id="profile-name-large">Caricamento...</h2>
+                            <span class="profile-role" id="profile-role-large">Consulente</span>
+                            <span id="org-role-badge" style="display:inline-block;margin-top:0.4rem;padding:0.2rem 0.75rem;background:rgba(59,130,246,0.1);color:var(--accent-primary);border-radius:var(--radius-full);font-size:0.75rem;font-weight:600;"></span>
+                            <div class="profile-stats">
+                                <div class="stat-box">
+                                    <span class="stat-value" id="profile-total-points">150</span>
+                                    <span class="stat-label">Punti Totali</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span class="stat-value" id="profile-total-insights">3</span>
+                                    <span class="stat-label">Insight Inviati</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span class="stat-value" id="profile-total-upvotes">0</span>
+                                    <span class="stat-label">Upvote Ricevuti</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SEZIONE TEAM -->
+                    <div class="profile-teams-section" style="margin-bottom: 3rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                            <h3 style="font-size: 1.5rem; color: var(--text-primary);"><i class="fa-solid fa-people-group" style="color: var(--accent-primary); margin-right: 0.5rem;"></i>I Miei Team</h3>
+                            <button id="create-team-btn" class="btn-primary" style="display: none; padding: 0.6rem 1.2rem; font-size: 0.85rem;">
+                                <i class="fa-solid fa-plus"></i> Crea Team
+                            </button>
+                        </div>
+
+                        <!-- Form creazione team (nascosto di default) -->
+                        <div id="create-team-form" style="display: none; background: var(--bg-surface); border: 1px solid var(--accent-primary); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <h4 style="color: var(--accent-primary); margin-bottom: 1rem;"><i class="fa-solid fa-wand-magic-sparkles"></i> Nuovo Team</h4>
+                            <div class="form-group" style="margin-bottom: 1rem;">
+                                <label for="new-team-name">Nome del Team</label>
+                                <input type="text" id="new-team-name" placeholder="Es. Team AI Transformation">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 1rem;">
+                                <label for="new-team-members">Email Membri (una per riga)</label>
+                                <textarea id="new-team-members" rows="3" placeholder="mario.rossi@bto.it&#10;anna.verdi@bto.it&#10;luca.neri@bto.it"></textarea>
+                            </div>
+                            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                                <button type="button" id="cancel-team-btn" class="btn-secondary">Annulla</button>
+                                <button type="button" id="save-team-btn" class="btn-primary"><i class="fa-solid fa-check"></i> Crea</button>
+                            </div>
+                        </div>
+
+                        <div id="teams-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem;">
+                            <!-- Generato via JS -->
+                        </div>
+                        <p id="no-teams-msg" style="color: var(--text-muted); display: none;">Non fai ancora parte di nessun team.</p>
+                    </div>
+
+                    <div class="profile-history">
+                        <h3>I Miei Insight Recenti (Privato)</h3>
+                        <div class="insights-grid" id="profile-insights-grid">
+                            <!-- Generato via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <div id="toast" class="toast hidden">
+        <div class="toast-icon">
+            <i class="fa-solid fa-check-circle" id="toast-icon-i"></i>
+        </div>
+        <div class="toast-content">
+            <h4 id="toast-title">Insight Inviato!</h4>
+            <p id="toast-message">Hai guadagnato <strong class="highlight">+50 punti</strong> per il tuo contributo.</p>
+        </div>
+    </div>
+
+    <!-- 1. Import Supabase via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- 2. Import config with keys -->
+    <script src="config.js"></script>
+    <!-- 3. Import Main App logic -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,405 @@
+
+# Proposta di Sistema **“Insight Hub BTO”**
+## Raccolta e Valorizzazione della Conoscenza Consulenziale
+
+---
+
+## 1. Visione complessiva
+
+L’**Insight Hub** è una piattaforma interna che consente ai consulenti onsite di:
+
+- catturare rapidamente insight qualitativi  
+- trasformarli in conoscenza strutturata  
+- renderli interrogabili tramite un LLM aziendale  
+- restituire valore immediato a chi contribuisce  
+
+Il sistema **non è un CRM né un tool di reportistica**, ma un **sistema di Knowledge Intelligence**.
+
+---
+
+## 2. Inserimento Insight  
+### Human input free-text → AI-assisted structuring
+
+> *“Il consulente non deve compilare campi, ma raccontare ciò che osserva.  
+> È l’AI che si occupa di strutturare la conoscenza.”*
+
+Questo approccio:
+- riduce la frizione
+- aumenta il coinvolgimento
+- rispecchia il modo normale di lavorare dei consulenti (osservazioni, conversazioni, pattern)
+
+Chiedere subito campi strutturati:
+- rallenta
+- porta a dati sbagliati
+- abbassa l’adozione  
+
+**L’AI come facilitatore, non come sostituto.**
+
+---
+
+### Flusso operativo
+
+1. L’utente scrive un insight libero (schermata *Inserisci insight*), ad esempio:  
+   > “Durante i meeting il cliente mostra difficoltà nel tradurre i dati di produzione in decisioni operative…”
+
+2. Clicca il bottone **“Analizza con AI”**
+
+3. Il frontend invia una richiesta a una **API interna**, passando:
+   - testo dell’insight
+   - ID utente (se disponibile)
+
+4. L’API route:
+   - gira su **Vercel**
+   - fa da ponte tra frontend e servizi esterni (**Supabase / AI**)
+   - contiene:
+     - chiavi Supabase
+     - chiavi AI  
+   *Il frontend non le vede mai.*
+
+5. L’API:
+   - costruisce il prompt  
+   - inserisce il testo dell’insight nel template  
+
+```
+
+PROMPT = template + insightText
+
+````
+
+- chiama un **modello LLM reale** (es. Mixtral / LLaMA)
+- riceve una risposta JSON  
+
+Qui avvengono:
+- classificazione
+- estrazione semantica
+- sintesi professionale
+
+6. Validazione risposta AI:
+- JSON valido
+- campi richiesti presenti  
+- se manca qualcosa → `"non specificato"`
+
+7. Risposta al frontend (esempio):
+
+```json
+{
+  "cliente": "cliente retail",
+  "settore": "Retail",
+  "categoria": "Bisogno",
+  "area_consulenziale": "E-commerce & Marketing",
+  "livello_confidenza": "medio",
+  "sintesi_insight": "Il cliente fatica a trasformare i dati in azioni concrete."
+}
+````
+
+8.  **UX – conferma umana**  
+    L’utente può:
+    *   correggere i campi
+    *   lasciarli così
+    *   svuotarli
+
+9.  **Salvataggio finale in Supabase**  
+    Bottone: **“Salva Insight”**
+
+***
+
+## 3. Motivazione dei consulenti (non economica)
+
+### Valore diretto percepito
+
+*   Accesso prioritario agli insight più rilevanti
+*   Suggerimenti automatici:
+    > “Questo insight ti sarebbe stato utile 2 settimane fa sul cliente X”
+
+### Gamification “soft” (non competitiva)
+
+*   **Badges collaborativi**, non ranking:
+    *   *Contributore costante*
+    *   *Abilitante team*
+*   Progressi visibili solo all’utente
+*   Riconoscimento qualitativo, non numerico
+
+***
+
+## 4. Utilizzo dei dati: “Grande cervello LLM”
+
+### Modalità di interrogazione
+
+*   Linguaggio naturale, ad esempio:
+    > “Quali problemi ricorrenti stanno emergendo nei progetti di Smart Factory nel retail?”
+
+### Output
+
+*   Risposte stile consulente
+*   Evidenziazione delle fonti (insight interni)
+*   Sintesi + pattern ricorrenti
+
+***
+
+## 5. Modello dei dati (esemplificativo)
+
+### Entità principale: Insight
+
+*   id
+*   titolo (auto-generabile)
+*   descrizione libera (testo breve)
+*   contesto cliente (industria, area, maturità)
+*   tipo insight (bisogno, rischio, opportunità, comportamento)
+*   livello di confidenzialità
+*   autore
+*   data creazione
+*   stato (bozza / validato / archiviato)
+
+### Arricchimenti
+
+*   tag collaborativi
+*   commenti
+*   casi simili suggeriti (LLM)
+*   collegamenti a progetti
+
+### Meta-valore
+
+*   numero di consultazioni
+*   “ti è stato utile?” (feedback soft, non rating)
+
+**Pochi campi obbligatori**, il resto opzionale o suggerito dall’AI.
+
+***
+
+## 6. Interrogazioni al “Cervellone”
+
+Grazie a questo flusso, l’AI *Ask the Brain* può:
+
+*   filtrare per settore
+*   confrontare categorie
+*   individuare pattern ricorrenti
+
+Le risposte risultano:
+
+*   più coerenti
+*   più affidabili
+*   più “da consulente”
+
+***
+
+## 7. Fase di validazione
+
+### Obiettivo reale
+
+Verificare:
+
+*   adozione reale
+*   sforzo cognitivo
+*   valore professionale e personale restituito
+
+### Output attesi
+
+*   \~10 insight reali inseriti
+*   alcune query LLM significative
+
+### Domande guida
+
+*   “Lo useresti domani?”
+*   “Lo consiglieresti a un collega onsite?”
+*   “Cosa cancelleresti?”
+*   “Cosa aggiungeresti?”
+
+***
+
+## Prototipo – Struttura tecnologica
+
+Il prototipo:
+
+*   non deve essere bello
+*   non deve essere completo
+*   deve fare **solo due cose**:
+    *   inserire insight
+    *   consultarli
+
+### Funzionalità minime
+
+*   Login (email + password)
+*   Inserimento rapido insight
+*   Lista insight
+*   Ricerca testuale semplice
+*   Primo output stile consulente (anche grezzo)
+
+### Sviluppi futuri
+
+*   Gamification avanzata
+*   Insight vocali da mobile
+*   AI più sofisticata
+*   Maggiore sicurezza dati
+*   Apprendimento dalle correzioni
+
+### Piattaforme tecnologiche
+
+*   Database: **Supabase**
+*   Repository: **GitHub**
+*   Hosting: **Vercel**
+*   Collegamento: Supabase ↔ Frontend
+
+***
+
+## 6.1 Obiettivo realistico
+
+*   Nessuna logica complicata
+*   Usa SDK Supabase ufficiale
+*   Copia + adatta
+
+## 6.2 Cose da far funzionare
+
+Login  
+Insert (`insert into insights`)  
+Select (`select * from insights`)
+
+> Se riesci a fare **solo questo**, hai già vinto.
+
+***
+
+## 7. “Grande cervello” con AI vera (RAG light, zero cost)
+
+### Obiettivo
+
+Pipeline **RAG minimale**, ma reale, con risposte “da consulente”.
+
+### 7.1 Architettura
+
+    Frontend (Ask the Brain)
+    ↓
+    API route Vercel
+    ↓
+    Supabase (insight)
+    ↓
+    LLM gratuito via API
+    ↓
+    Risposta naturale
+
+Nessuna infrastruttura extra. Nessun training.
+
+***
+
+### 7.2 LLM (zero cost)
+
+**Groq API**
+
+*   modelli open-source
+*   veloce
+*   gratuito
+
+Modelli:
+
+*   Mixtral 8x7B
+*   LLaMA 3
+
+***
+
+### 7.4 Flusso concettuale
+
+**Passo 1** — Domanda utente
+
+> “Quali bisogni ricorrenti emergono dai clienti retail?”
+
+**Passo 2** — Recupero insight
+
+*   ultimi N insight
+*   oppure keyword-based
+*   nessun embedding (per ora)
+
+**Passo 3** — Prompt
+
+> “Sei un consulente senior.  
+> Analizza questi insight interni ed evidenzia pattern, rischi e opportunità.”
+
+**Passo 4** — Chiamata LLM reale  
+**Passo 5** — Visualizzazione risposta
+
+*   testo strutturato
+*   tono consulenziale
+
+***
+
+### 7.5 Perché è una RAG vera
+
+| Elemento                | Presente |
+| ----------------------- | -------- |
+| Dati interni            | ✅        |
+| Recupero DB             | ✅        |
+| Prompt contestualizzato | ✅        |
+| LLM reale               | ✅        |
+| Generazione dinamica    | ✅        |
+
+RAG minimale, ma valida per **prototype & thesis**.
+
+***
+
+### 7.6 Cosa NON facciamo ora
+
+*   Embedding vettoriali
+*   Similarity search avanzata
+*   Fine-tuning
+*   Memory persistente
+
+***
+
+### 7.7 Versione passo-passo
+
+1.  Pagina `/ask-brain`
+2.  Campo domanda
+3.  Bottone **Chiedi**
+4.  API route:
+    *   recupero insight
+    *   chiamata AI
+    *   ritorno testo
+5.  Visualizzazione risposta
+
+***
+
+### 7.9 Rischi e mitigazioni
+
+| Rischio         | Soluzione            |
+| --------------- | -------------------- |
+| Prompt lungo    | Limite 10–15 insight |
+| Risposte vaghe  | Prompt molto guidato |
+| Costi nascosti  | Limite richieste     |
+| Overengineering | Niente embedding     |
+
+***
+
+## FASE 8 — Deploy online (1 ora)
+
+### 8.1 GitHub
+
+Commit chiari:
+
+*   login page
+*   add insight page
+*   insights list
+
+### 8.2 Vercel
+
+*   Import repository
+*   Inserisci:
+    *   Supabase URL
+    *   Supabase key
+*   Deploy
+
+***
+
+## FASE 9 — Test utenti
+
+### 9.1 Script
+
+1.  Inserisci un insight reale
+2.  Cerca qualcosa che ti servirebbe
+3.  Dimmi cosa ti ha infastidito
+
+### 9.2 Cosa osservare
+
+*   Tempi
+*   Confusione
+*   Commenti spontanei
+*   Cosa ignorano
+
+```
+```

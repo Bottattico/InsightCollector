@@ -1,0 +1,10 @@
+{
+  "name": "insight-hub-api",
+  "version": "1.0.0",
+  "description": "Vercel API for Insight Hub",
+  "type": "module",
+  "dependencies": {
+    "groq-sdk": "^0.3.3",
+    "@supabase/supabase-js": "^2.43.1"
+  }
+}
