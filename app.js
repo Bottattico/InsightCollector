@@ -153,6 +153,12 @@
         if(logoutBtn) {
             logoutBtn.addEventListener('click', async () => {
                 await supa.auth.signOut();
+
+                allInsights = [];
+                points = 0;
+                weeklyInsights = 0;
+                myUpvotedIds = new Set();
+
                 updateAuthState(null);
             });
         }
@@ -500,28 +506,28 @@
                             }
                         ]);
 
-                    if (error) throw error;
+                if (error) throw error;
 
-                    points += 50; 
-                    weeklyInsights += 1;
-                    animateValue(totalPointsEl, points - 50, points, 1000);
-                    updateProgressBar();
-                    showToast("Insight Inviato!", `Hai guadagnato <strong class="highlight">+50 punti</strong> per il tuo contributo.`, "fa-check-circle");
+                showToast(
+                "Insight Inviato!",
+                `Hai guadagnato <strong class="highlight">+50 punti</strong> per il tuo contributo.`,
+                "fa-check-circle"
+                );
 
-                    form.reset(); 
-                    
-                    // Auto-aggiungi il cliente alla tabella clients se è nuovo
-                    if (clientVal && !dbClients.includes(clientVal)) {
-                        await supa.from('clients').insert([{ name: clientVal }]).single();
-                        populateDatalists(); // Ricarica la lista
-                    }
+                form.reset();
 
-                    // Ricarica dati
-                    loadInsights();
+                if (clientVal && !dbClients.includes(clientVal)) {
+                await supa.from('clients').insert([{ name: clientVal }]).single();
+                populateDatalists();
+                }
 
-                    // Cambia vista
-                    const esploraLink = document.querySelector('[data-target="view-esplora-dati"]');
-                    if(esploraLink) esploraLink.click();
+                await loadInsights();
+
+                animateValue(totalPointsEl, 0, points, 800);
+                updateProgressBar();
+
+                const esploraLink = document.querySelector('[data-target="view-esplora-dati"]');
+                if(esploraLink) esploraLink.click();
 
                 } catch (err) {
                     console.error("Errore salvataggio:", err);
@@ -685,6 +691,11 @@
 
         // --- LEADERBOARD & PROFILE ---
         function renderLeaderboards() {
+            if(allInsights.length === 0) {
+                leaderboardInd.innerHTML = '';
+                leaderboardTeams.innerHTML = '';
+                return;
+            }
             if(!leaderboardInd || !leaderboardTeams) return;
             const userScores = {};
             allInsights.forEach(i => {
@@ -1054,42 +1065,106 @@
         }
         
         // --- FUNZIONI SUPABASE DATA FETCH ---
-        async function loadInsights() {
-            try {
-                const { data, error } = await supa
-                    .from('insights')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                
-                if (error) {
-                    console.error("Errore fetch Supabase:", error);
-                    return;
-                }
-                
-                allInsights = data || [];
+    async function loadInsights() {
+    try {
 
-                // Ricalcola punti e insight settimanali dall'utente corrente
-                const now = new Date();
-                const startOfWeek = new Date(now);
-                startOfWeek.setDate(now.getDate() - now.getDay());
-                startOfWeek.setHours(0, 0, 0, 0);
+        const { data, error } = await supa
+            .from('insights')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-                const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
-                weeklyInsights = myInsights.filter(i => new Date(i.created_at) >= startOfWeek).length;
-                const myUpvotesTotal = myInsights.reduce((sum, i) => sum + (i.upvotes || 0), 0);
-                points = myInsights.length * 50 + myUpvotesTotal * 10;
-
-                if(totalPointsEl) totalPointsEl.textContent = points;
-                updateProgressBar();
-                
-                // Aggiorna la griglia se è aperta
-                if(document.getElementById('view-esplora-dati').classList.contains('active')) {
-                    renderInsights(allInsights, insightsGrid, true);
-                }
-            } catch (e) {
-                console.error("Errore caricamento DB:", e);
-            }
+        if (error) {
+            console.error("Errore fetch Supabase:", error);
+            return;
         }
+
+        // RESET SICURO
+        allInsights = data || [];
+
+        // -----------------------------
+        // CALCOLO STATS UTENTE
+        // -----------------------------
+
+        const now = new Date();
+
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const myInsights = allInsights.filter(
+            i => (i.author_email || i.author) === currentUser
+        );
+
+        weeklyInsights = myInsights.filter(
+            i => new Date(i.created_at) >= startOfWeek
+        ).length;
+
+        const myUpvotesTotal = myInsights.reduce(
+            (sum, i) => sum + (i.upvotes || 0),
+            0
+        );
+
+        // SINGLE SOURCE OF TRUTH
+        points = (myInsights.length * 50) + (myUpvotesTotal * 10);
+
+        // -----------------------------
+        // RESET UI
+        // -----------------------------
+
+        if (totalPointsEl) {
+            totalPointsEl.textContent = points || 0;
+        }
+
+        if (profileTotalPoints) {
+            profileTotalPoints.textContent = points || 0;
+        }
+
+        if (profileTotalInsights) {
+            profileTotalInsights.textContent = myInsights.length || 0;
+        }
+
+        if (profileTotalUpvotes) {
+            profileTotalUpvotes.textContent = myUpvotesTotal || 0;
+        }
+
+        updateProgressBar();
+
+        // -----------------------------
+        // REFRESH VIEW
+        // -----------------------------
+
+        const esploraView = document.getElementById('view-esplora-dati');
+
+        if (esploraView && esploraView.classList.contains('active')) {
+            renderInsights(allInsights, insightsGrid, true);
+        }
+
+        // Aggiorna profile view se aperta
+        const profileView = document.getElementById('view-profilo');
+
+        if (profileView && profileView.classList.contains('active')) {
+            renderProfile();
+        }
+
+        // Aggiorna leaderboard se aperta
+        const leaderboardView = document.getElementById('view-classifica');
+
+        if (leaderboardView && leaderboardView.classList.contains('active')) {
+            renderLeaderboards();
+        }
+
+    } catch (e) {
+
+        console.error("Errore caricamento DB:", e);
+
+        // FAILSAFE RESET
+        allInsights = [];
+        points = 0;
+        weeklyInsights = 0;
+
+        if (totalPointsEl) totalPointsEl.textContent = 0;
+    }
+    }
 
         // I dati ora vengono caricati da updateAuthState() quando l'utente si logga
 
