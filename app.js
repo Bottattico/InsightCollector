@@ -757,34 +757,40 @@
             animateValue(profileTotalInsights, 0, myInsights.length, 800);
             animateValue(profileTotalUpvotes, 0, myUpvotes, 800);
         }
-        
-        function renderProfile() {
-            renderProfileStats();
-            renderInsights(allInsights.filter(i => (i.author_email || i.author) === currentUser), profileInsightsGrid, false);
-            loadUserTeams();
 
-            // Mostra bottone "Crea Team" solo per Manager e Partner
-            const createTeamBtn = document.getElementById('create-team-btn');
-            const { data: { session: currentSession } } = { data: { session: null } };
-            // Ricava il ruolo dai metadati salvati nella sessione corrente
-            supa.auth.getSession().then(({ data: { session: s } }) => {
-                if (!s) return;
-                const role = s.user.user_metadata?.role || '';
-                if (
-                    role === 'team_leader' ||
-                    role === 'engagement_manager' ||
-                    role === 'lead' ||
-                    role === 'practice_manager' ||
-                    role === 'responsabile' ||
-                    role === 'bu_manager' ||
-                    role === 'admin'
-                ) 
-                {
-                    if (createTeamBtn) createTeamBtn.style.display = 'flex';
-                } else {
-                    if (createTeamBtn) createTeamBtn.style.display = 'none';
-                }
-            });
+        function renderProfileStats() {
+
+            // Insight reali dell'utente
+            const myInsights = allInsights.filter(
+                i => (i.author_email || i.author) === currentUser
+            );
+
+            // Totale upvotes reali
+            const myUpvotes = myInsights.reduce(
+                (sum, i) => sum + (i.upvotes || 0),
+                0
+            );
+
+            // Calcolo reale punti
+            const realTotalPoints =
+                (myInsights.length * 50) +
+                (myUpvotes * 10);
+
+            // RESET DIRETTO UI
+            if(profileTotalPoints) {
+                profileTotalPoints.textContent = realTotalPoints || 0;
+            }
+
+            if(profileTotalInsights) {
+                profileTotalInsights.textContent = myInsights.length || 0;
+            }
+
+            if(profileTotalUpvotes) {
+                profileTotalUpvotes.textContent = myUpvotes || 0;
+            }
+
+            // Aggiorna variabili globali
+            points = realTotalPoints;
         }
 
         // --- TEAM MANAGEMENT ---
