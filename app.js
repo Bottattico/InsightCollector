@@ -41,7 +41,6 @@
                 if(greetingEl) greetingEl.dataset.firstname = meta.first_name || userNameDisplay;
 
                 // Update Role
-                const userRole = currentUserOrgRole || "consulente";                const sidebarRole = document.getElementById('sidebar-role');
                 const profileRole = document.getElementById('profile-role-large');
                 if(sidebarRole) sidebarRole.textContent = userRole;
                 if(profileRole) profileRole.textContent = userRole;
@@ -62,6 +61,19 @@
                         .single();
                     if (profile?.org_role) {
                         currentUserOrgRole = profile.org_role;
+                        // Aggiorna la UI ora che abbiamo il ruolo reale
+                        const sidebarRoleEl = document.getElementById('sidebar-role');
+                        const profileRoleEl = document.getElementById('profile-role-large');
+                        const roleLabels = {
+                            consulente: 'Consulente', team_leader: 'Team Leader',
+                            engagement_manager: 'Engagement Manager', lead: 'Lead',
+                            practice_manager: 'Practice Manager', responsabile: 'Responsabile',
+                            bu_manager: 'BU Manager', marketing: 'Marketing', sales: 'Sales',
+                            hr: 'HR', operations: 'Operations', admin: 'Admin'
+                        };
+                        const label = roleLabels[currentUserOrgRole] || currentUserOrgRole;
+                        if (sidebarRoleEl) sidebarRoleEl.textContent = label;
+                        if (profileRoleEl) profileRoleEl.textContent = label;                    
                     }
                     updateUIByRole();
                     await loadMyUpvotes();
@@ -272,7 +284,9 @@
         // --- AGGIORNAMENTO UI IN BASE AL RUOLO ---
         function updateUIByRole() {
             // Mostra/nascondi voci di navigazione e sezioni in base a org_role
-
+            // Pulsante "Crea Team" visibile a tutti gli utenti autenticati
+            const createTeamBtn = document.getElementById('create-team-btn');
+            if (createTeamBtn) createTeamBtn.style.display = 'flex';
             // "Classifiche" visible a tutti
             // Nessuna nav nascosta di default per consulente base
 
@@ -750,15 +764,6 @@
         }
 
         function renderProfileStats() {
-            const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
-            const myUpvotes = myInsights.reduce((sum, i) => sum + (i.upvotes || 0), 0);
-            const realTotalPoints = points + (myUpvotes * 10); 
-            animateValue(profileTotalPoints, 0, realTotalPoints, 800);
-            animateValue(profileTotalInsights, 0, myInsights.length, 800);
-            animateValue(profileTotalUpvotes, 0, myUpvotes, 800);
-        }
-
-        function renderProfileStats() {
 
             // Insight reali dell'utente
             const myInsights = allInsights.filter(
@@ -791,6 +796,18 @@
 
             // Aggiorna variabili globali
             points = realTotalPoints;
+        }
+
+        function renderProfile() {
+            renderProfileStats();
+            loadUserTeams();
+            
+            const myInsights = allInsights.filter(
+                i => (i.author_email || i.author) === currentUser
+            );
+            if (profileInsightsGrid) {
+                renderInsights(myInsights, profileInsightsGrid, false);
+            }
         }
 
         // --- TEAM MANAGEMENT ---
