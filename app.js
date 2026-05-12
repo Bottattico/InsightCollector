@@ -36,6 +36,10 @@
                 if(sidebarName) sidebarName.textContent = userNameDisplay;
                 if(profileName) profileName.textContent = userNameDisplay;
 
+                // Salva il nome nel greeting per updateUIByRole
+                const greetingEl = document.getElementById('topbar-greeting');
+                if(greetingEl) greetingEl.dataset.firstname = meta.first_name || userNameDisplay;
+
                 // Update Role
                 const userRole = session.user.user_metadata?.role || "Consulente";
                 const sidebarRole = document.getElementById('sidebar-role');
@@ -190,14 +194,12 @@
         const chatInput = document.getElementById('chat-input');
         const chatHistory = document.getElementById('chat-history');
 
-        // --- UTENTE CORRENTE ---
-        let points = 150;
-        let weeklyInsights = 3;
-        const weeklyGoal = 5;
-
         // --- STATO ---
         let allInsights = [];
         let currentUserOrgRole = 'consulente';
+        let points = 0;
+        let weeklyInsights = 0;
+        const weeklyGoal = 5;
 
         // Livello gerarchico per confronti rapidi
         const ORG_ROLE_LEVEL = {
@@ -292,7 +294,17 @@
                     bu_manager: 'BU Manager', marketing: 'Marketing', sales: 'Sales',
                     hr: 'HR', operations: 'Operations', admin: 'Admin'
                 };
-                orgRoleBadge.textContent = labels[currentUserOrgRole] || currentUserOrgRole;
+                const roleLabel = labels[currentUserOrgRole] || currentUserOrgRole;
+                if (orgRoleBadge) orgRoleBadge.textContent = roleLabel;
+
+                // Greeting dinamico
+                const hour = new Date().getHours();
+                const saluto = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
+                const greetingEl = document.getElementById('topbar-greeting');
+                if (greetingEl) {
+                    const firstName = greetingEl.dataset.firstname || roleLabel;
+                    greetingEl.textContent = `${saluto}, ${firstName}`;
+                }
             }
         }
 
@@ -683,8 +695,10 @@
                 userScores[author].insights += 1;
             });
 
-            // Aggiungi l'utente corrente se non c'è
-            if(!userScores[currentUser]) userScores[currentUser] = { points: points, insights: weeklyInsights };
+            // Aggiungi l'utente corrente solo se ha davvero inserito insight
+            if(currentUser && !userScores[currentUser] && points > 0) {
+                userScores[currentUser] = { points, insights: allInsights.filter(i => (i.author_email || i.author) === currentUser).length };
+            }
 
             leaderboardInd.innerHTML = Object.keys(userScores)
                 .map(u => ({ name: u, ...userScores[u] }))
@@ -1045,6 +1059,20 @@
                 }
                 
                 allInsights = data || [];
+
+                // Ricalcola punti e insight settimanali dall'utente corrente
+                const now = new Date();
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                startOfWeek.setHours(0, 0, 0, 0);
+
+                const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
+                weeklyInsights = myInsights.filter(i => new Date(i.created_at) >= startOfWeek).length;
+                const myUpvotesTotal = myInsights.reduce((sum, i) => sum + (i.upvotes || 0), 0);
+                points = myInsights.length * 50 + myUpvotesTotal * 10;
+
+                if(totalPointsEl) totalPointsEl.textContent = points;
+                updateProgressBar();
                 
                 // Aggiorna la griglia se è aperta
                 if(document.getElementById('view-esplora-dati').classList.contains('active')) {
