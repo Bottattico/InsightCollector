@@ -41,8 +41,7 @@
                 if(greetingEl) greetingEl.dataset.firstname = meta.first_name || userNameDisplay;
 
                 // Update Role
-                const userRole = session.user.user_metadata?.role || "Consulente";
-                const sidebarRole = document.getElementById('sidebar-role');
+                const userRole = currentUserOrgRole || "consulente";                const sidebarRole = document.getElementById('sidebar-role');
                 const profileRole = document.getElementById('profile-role-large');
                 if(sidebarRole) sidebarRole.textContent = userRole;
                 if(profileRole) profileRole.textContent = userRole;
@@ -760,7 +759,16 @@
             supa.auth.getSession().then(({ data: { session: s } }) => {
                 if (!s) return;
                 const role = s.user.user_metadata?.role || '';
-                if (role === 'Manager' || role === 'Partner' || role === 'Associate') {
+                if (
+                    role === 'team_leader' ||
+                    role === 'engagement_manager' ||
+                    role === 'lead' ||
+                    role === 'practice_manager' ||
+                    role === 'responsabile' ||
+                    role === 'bu_manager' ||
+                    role === 'admin'
+                ) 
+                {
                     if (createTeamBtn) createTeamBtn.style.display = 'flex';
                 } else {
                     if (createTeamBtn) createTeamBtn.style.display = 'none';
