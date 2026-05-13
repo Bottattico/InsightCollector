@@ -1124,6 +1124,13 @@
             }
         }
 
+        // ─── UTILS ───────────────────────────────────────────────────────────
+        function formatDate(iso) {
+            const d = new Date(iso);
+            return isNaN(d) ? 'Data sconosciuta'
+                : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+        }
+
         // ─── BADGE MILESTONE ──────────────────────────────────────────────────
         const BADGE_DEFINITIONS = {
             primo_insight:     { label: '🌱 Primo Passo',        desc: 'Hai inserito il tuo primo insight' },
@@ -1148,37 +1155,47 @@
             if (myUpvotes >= 10) toAward.push('knowledge_sharer');
 
             for (const key of toAward) {
-                try {
-                    await supa.from('badges').insert([{ user_email: currentUser, badge_key: key }]);
-                } catch (_) { /* già esistente — UNIQUE constraint */ }
+                // upsert con onConflict — non genera errori se già esiste
+                await supa.from('badges')
+                    .upsert({ user_email: currentUser, badge_key: key }, { onConflict: 'user_email,badge_key', ignoreDuplicates: true });
             }
         }
 
-        // ─── RENDER BOZZE DA VALIDARE ────────────────────────────────────────
         async function renderDraftInsights() {
             const container = document.getElementById('draft-insights-grid');
             if (!container) return;
-            container.innerHTML = '';
+            container.innerHTML = '<p style="color:var(--text-muted);">Caricamento...</p>';
 
-            // team_leader vede solo bozze del proprio team
-            // responsabile+ vede tutte le bozze
-            let toShow = draftInsights;
-            if (!hasOrgRole('responsabile')) {
-                // Carica i team dell'utente
-                const { data: memberships } = await supa
-                    .from('team_members')
-                    .select('team_id')
-                    .eq('user_email', currentUser);
-                const { data: myTeams } = await supa
-                    .from('teams')
-                    .select('name')
-                    .in('id', (memberships || []).map(m => m.team_id));
-                const myTeamNames = (myTeams || []).map(t => t.name);
-                toShow = draftInsights.filter(i => myTeamNames.includes(i.team));
+            // Carica direttamente dal DB tutte le bozze non mie
+            const { data, error } = await supa
+                .from('insights')
+                .select('*')
+                .eq('status', 'bozza')
+                .neq('author_email', currentUser)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                container.innerHTML = '<p style="color:var(--danger);">Errore caricamento bozze.</p>';
+                return;
             }
 
+            let toShow = data || [];
+
+            // team_leader vede solo bozze del proprio team; responsabile+ vede tutte
+            if (!hasOrgRole('responsabile') && toShow.length > 0) {
+                const { data: memberships } = await supa
+                    .from('team_members').select('team_id').eq('user_email', currentUser);
+                const { data: myTeams } = await supa
+                    .from('teams').select('name')
+                    .in('id', (memberships || []).map(m => m.team_id));
+                const myTeamNames = (myTeams || []).map(t => t.name);
+                toShow = toShow.filter(i => !i.team || myTeamNames.includes(i.team));
+            }
+
+            container.innerHTML = '';
+
             if (toShow.length === 0) {
-                container.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;">Nessun insight in attesa di validazione. Ottimo lavoro!</p>';
+                container.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;padding:2rem 0;">Nessun insight in attesa di validazione. Ottimo lavoro del team!</p>';
                 return;
             }
 
@@ -1186,10 +1203,8 @@
                 const card = document.createElement('div');
                 card.className = 'insight-card';
                 card.style.border = '1px solid rgba(245,158,11,0.4)';
-
                 const dateStr = formatDate(insight.created_at);
                 const rawAuthor = insight.author_email || 'Utente Sconosciuto';
-
                 card.innerHTML = `
                     <div class="card-header">
                         <div class="card-badges">
@@ -1218,7 +1233,6 @@
                 container.appendChild(card);
             });
 
-            // Handler validazione
             container.querySelectorAll('.btn-valida').forEach(btn => {
                 btn.addEventListener('click', async function () {
                     const id = this.getAttribute('data-id');
@@ -1231,12 +1245,13 @@
                             validated_at: new Date().toISOString()
                         }).eq('id', id);
                         if (error) throw error;
-
-                        // Badge team_player se ha validato 3 insight
-                        try { await supa.from('badges').insert([{ user_email: currentUser, badge_key: 'team_player' }]); } catch (_) {}
-
+                        await supa.from('badges').upsert(
+                            { user_email: currentUser, badge_key: 'team_player' },
+                            { onConflict: 'user_email,badge_key', ignoreDuplicates: true }
+                        );
                         showToast('Insight Validato!', 'L\'insight è ora visibile a tutti i consulenti.', 'fa-check-circle');
                         await loadInsights();
+                        renderDraftInsights();
                     } catch (err) {
                         showToast('Errore', 'Impossibile validare: ' + err.message, 'fa-triangle-exclamation', false);
                         this.disabled = false;
