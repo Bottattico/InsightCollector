@@ -4,6 +4,7 @@
     try {
         // --- INIZIALIZZA SUPABASE ---
         const supa = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
         // --- AUTHENTICATION LOGIC ---
         let isLoginMode = true;
         const authContainer = document.getElementById('auth-container');
@@ -195,6 +196,7 @@
 
         // --- STATO ---
         let allInsights = [];
+        let draftInsights = [];
         let currentUserOrgRole = 'consulente';
         let points = 0;
         let weeklyInsights = 0;
@@ -265,6 +267,12 @@
 
         // --- AGGIORNAMENTO UI IN BASE AL RUOLO ---
         function updateUIByRole() {
+            // ── Da Validare — solo team_leader+
+            const validaNav = document.querySelector('[data-target="view-valida"]');
+            if (validaNav) {
+                validaNav.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
+            }
+
             // ── Nuovo Insight: solo team_leader+ può inserire
             const nuovoInsightNav = document.querySelector('[data-target="view-nuovo-insight"]');
             if (nuovoInsightNav) {
@@ -485,6 +493,7 @@
                         renderInsights(allInsights, insightsGrid, true);
                         if(searchInput) searchInput.value = '';
                     }
+                    if(targetId === 'view-valida')     renderDraftInsights();
                     if(targetId === 'view-classifica') renderLeaderboards();
                     if(targetId === 'view-profilo') renderProfile();
                 }
@@ -1074,32 +1083,168 @@
                     return;
                 }
                 
-                allInsights = data || [];
+                const all = data || [];
 
-                // Ricalcola punti e insight settimanali dall'utente corrente
-                const now = new Date();
-                const startOfWeek = new Date(now);
-                startOfWeek.setDate(now.getDate() - now.getDay());
-                startOfWeek.setHours(0, 0, 0, 0);
+                // Esplora mostra solo pubblicati + le mie bozze
+                allInsights = all.filter(i =>
+                    i.status === 'pubblicato' ||
+                    (i.author_email || i.author) === currentUser
+                );
 
-                const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
-                weeklyInsights = myInsights.filter(i => new Date(i.created_at) >= startOfWeek).length;
-                const myUpvotesTotal = myInsights.reduce((sum, i) => sum + (i.upvotes || 0), 0);
-                points = myInsights.length * 50 + myUpvotesTotal * 10;
+                // Bozze da validare: tutte le bozze non mie (per chi può validare)
+                draftInsights = all.filter(i =>
+                    i.status === 'bozza' &&
+                    (i.author_email || i.author) !== currentUser
+                );
 
-                if(totalPointsEl) totalPointsEl.textContent = points;
-                updateProgressBar();
-                
-                // Aggiorna la griglia se è aperta
-                if(document.getElementById('view-esplora-dati').classList.contains('active')) {
-                    renderInsights(allInsights, insightsGrid, true);
+                // Calcolo badge milestone
+                const myAll = all.filter(i => (i.author_email || i.author) === currentUser);
+                checkAndAwardBadges(myAll);
+
+                // Aggiorna contatore "Da Validare" nel menu
+                const validaBadge = document.getElementById('valida-count-badge');
+                if (validaBadge) {
+                    validaBadge.textContent = draftInsights.length;
+                    validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
                 }
+
+                // Refresh viste aperte
+                if (document.getElementById('view-esplora-dati')?.classList.contains('active')) {
+                    renderInsights(allInsights, insightsGrid);
+                }
+                if (document.getElementById('view-valida')?.classList.contains('active')) {
+                    renderDraftInsights();
+                }
+                if (document.getElementById('view-profilo')?.classList.contains('active')) {
+                    renderProfile();
+                }
+
             } catch (e) {
                 console.error("Errore caricamento DB:", e);
             }
         }
 
-        // I dati ora vengono caricati da updateAuthState() quando l'utente si logga
+        // ─── BADGE MILESTONE ──────────────────────────────────────────────────
+        const BADGE_DEFINITIONS = {
+            primo_insight:     { label: '🌱 Primo Passo',        desc: 'Hai inserito il tuo primo insight' },
+            insight_5:         { label: '📚 Knowledge Builder',  desc: 'Hai inserito 5 insight' },
+            insight_10:        { label: '🧠 Expert Contributor', desc: 'Hai inserito 10 insight' },
+            prima_validazione: { label: '✅ Validato!',           desc: 'Il tuo primo insight è stato validato' },
+            validazioni_5:     { label: '🏅 Affidabile',         desc: '5 tuoi insight validati dalla community' },
+            team_player:       { label: '🤝 Team Player',        desc: 'Hai validato 3 insight di colleghi' },
+            knowledge_sharer:  { label: '💡 Knowledge Sharer',   desc: 'Hai ricevuto 10 upvote totali' },
+        };
+
+        async function checkAndAwardBadges(myInsights) {
+            const toAward = [];
+            const published = myInsights.filter(i => i.status === 'pubblicato');
+
+            if (myInsights.length >= 1)  toAward.push('primo_insight');
+            if (myInsights.length >= 5)  toAward.push('insight_5');
+            if (myInsights.length >= 10) toAward.push('insight_10');
+            if (published.length >= 1)   toAward.push('prima_validazione');
+            if (published.length >= 5)   toAward.push('validazioni_5');
+            const myUpvotes = myInsights.reduce((s, i) => s + (i.upvotes || 0), 0);
+            if (myUpvotes >= 10) toAward.push('knowledge_sharer');
+
+            for (const key of toAward) {
+                try {
+                    await supa.from('badges').insert([{ user_email: currentUser, badge_key: key }]);
+                } catch (_) { /* già esistente — UNIQUE constraint */ }
+            }
+        }
+
+        // ─── RENDER BOZZE DA VALIDARE ────────────────────────────────────────
+        async function renderDraftInsights() {
+            const container = document.getElementById('draft-insights-grid');
+            if (!container) return;
+            container.innerHTML = '';
+
+            // team_leader vede solo bozze del proprio team
+            // responsabile+ vede tutte le bozze
+            let toShow = draftInsights;
+            if (!hasOrgRole('responsabile')) {
+                // Carica i team dell'utente
+                const { data: memberships } = await supa
+                    .from('team_members')
+                    .select('team_id')
+                    .eq('user_email', currentUser);
+                const { data: myTeams } = await supa
+                    .from('teams')
+                    .select('name')
+                    .in('id', (memberships || []).map(m => m.team_id));
+                const myTeamNames = (myTeams || []).map(t => t.name);
+                toShow = draftInsights.filter(i => myTeamNames.includes(i.team));
+            }
+
+            if (toShow.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;">Nessun insight in attesa di validazione. Ottimo lavoro!</p>';
+                return;
+            }
+
+            toShow.forEach(insight => {
+                const card = document.createElement('div');
+                card.className = 'insight-card';
+                card.style.border = '1px solid rgba(245,158,11,0.4)';
+
+                const dateStr = formatDate(insight.created_at);
+                const rawAuthor = insight.author_email || 'Utente Sconosciuto';
+
+                card.innerHTML = `
+                    <div class="card-header">
+                        <div class="card-badges">
+                            <span class="badge badge-client"><i class="fa-solid fa-building"></i> ${insight.client || 'N/A'}</span>
+                            <span class="badge badge-category"><i class="fa-solid fa-tag"></i> ${insight.category || 'N/A'}</span>
+                            <span class="badge badge-team"><i class="fa-solid fa-users"></i> ${insight.team || 'N/A'}</span>
+                            <span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;font-size:0.7rem;">
+                                <i class="fa-solid fa-clock"></i> In attesa
+                            </span>
+                        </div>
+                    </div>
+                    <h3 class="card-title">${insight.title || 'Senza Titolo'}</h3>
+                    <p class="card-snippet">${insight.snippet || ''}</p>
+                    <div class="card-footer">
+                        <div class="card-author">
+                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(rawAuthor)}&background=1E293B&color=fff" alt="Author">
+                            <span>${rawAuthor} • ${dateStr}</span>
+                        </div>
+                        <button class="btn-valida btn-primary" data-id="${insight.id}"
+                            style="padding:0.4rem 1rem;font-size:0.85rem;background:rgba(16,185,129,0.15);
+                                   color:#10B981;border:1px solid rgba(16,185,129,0.3);">
+                            <i class="fa-solid fa-check-circle"></i> Valida
+                        </button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+            // Handler validazione
+            container.querySelectorAll('.btn-valida').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const id = this.getAttribute('data-id');
+                    this.disabled = true;
+                    this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                    try {
+                        const { error } = await supa.from('insights').update({
+                            status: 'pubblicato',
+                            validated_by: currentUser,
+                            validated_at: new Date().toISOString()
+                        }).eq('id', id);
+                        if (error) throw error;
+
+                        // Badge team_player se ha validato 3 insight
+                        try { await supa.from('badges').insert([{ user_email: currentUser, badge_key: 'team_player' }]); } catch (_) {}
+
+                        showToast('Insight Validato!', 'L\'insight è ora visibile a tutti i consulenti.', 'fa-check-circle');
+                        await loadInsights();
+                    } catch (err) {
+                        showToast('Errore', 'Impossibile validare: ' + err.message, 'fa-triangle-exclamation', false);
+                        this.disabled = false;
+                        this.innerHTML = '<i class="fa-solid fa-check-circle"></i> Valida';
+                    }
+                });
+            });
+        }
 
     } catch(err) {
         document.body.innerHTML += `<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;padding:20px;z-index:99999;">JS ERROR: ${err.message} <br> ${err.stack}</div>`;
