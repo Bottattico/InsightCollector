@@ -831,54 +831,97 @@
         // --- LEADERBOARD & PROFILE ---
         function renderLeaderboards() {
             if(!leaderboardInd || !leaderboardTeams) return;
+
+            // Solo insight pubblicati contano per le classifiche
+            const published = allInsights.filter(i => i.status === 'pubblicato');
+
+            // ── INDIVIDUI: top 3 podio ──────────────────────────────────────
             const userScores = {};
-            allInsights.forEach(i => {
+            published.forEach(i => {
                 const author = i.author_email || i.author || 'Anonimo';
-                if(!userScores[author]) userScores[author] = { points: 0, insights: 0 };
-                userScores[author].points += 50 + ((i.upvotes || 0) * 10);
+                if(!userScores[author]) userScores[author] = { insights: 0, upvotes: 0 };
                 userScores[author].insights += 1;
+                userScores[author].upvotes  += (i.upvotes || 0);
             });
 
-            // Aggiungi l'utente corrente se non c'è
-            if(!userScores[currentUser]) userScores[currentUser] = { points: points, insights: weeklyInsights };
+            const top3 = Object.entries(userScores)
+                .map(([name, s]) => ({ name, ...s, points: s.insights * 50 + s.upvotes * 10 }))
+                .sort((a, b) => b.points - a.points)
+                .slice(0, 3);
 
-            leaderboardInd.innerHTML = Object.keys(userScores)
-                .map(u => ({ name: u, ...userScores[u] }))
-                .sort((a, b) => b.points - a.points).slice(0, 10)
-                .map((u, idx) => `
-                <li class="leaderboard-item rank-${idx+1}">
-                    <div class="rank-info">
-                        <div class="rank-number">${idx+1}</div>
-                        <div class="player-details">
-                            <img src="https://ui-avatars.com/api/?name=${u.name.replace(' ', '+')}&background=1E293B&color=fff" alt="${u.name}">
-                            <div><span class="player-name">${u.name}</span><span class="player-team">${u.insights} Insight condivisi</span></div>
-                        </div>
-                    </div>
-                    <div class="score-badge">${u.points} pt</div>
-                </li>`).join('');
+            if (top3.length === 0) {
+                leaderboardInd.innerHTML = '<p style="color:var(--text-muted);padding:1.5rem 0;text-align:center;">Nessun insight pubblicato ancora.</p>';
+            } else {
+                // Ordine visivo podio: 2°, 1°, 3°
+                const MEDAL  = ['🥇','🥈','🥉'];
+                const CLASS  = ['podium-gold','podium-silver','podium-bronze'];
+                const visual = top3.length >= 3
+                    ? [top3[1], top3[0], top3[2]]
+                    : top3.length === 2 ? [top3[1], top3[0]] : [top3[0]];
 
+                leaderboardInd.innerHTML = `<div class="podium">
+                    ${visual.map(u => {
+                        const rank = top3.indexOf(u);
+                        const cls  = CLASS[rank] || 'podium-bronze';
+                        const displayName = u.name.includes('@') ? u.name.split('@')[0] : u.name;
+                        return `<div class="podium-slot ${cls}">
+                            <div class="podium-avatar-wrap">
+                                <img class="podium-avatar" src="https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=1E293B&color=fff&size=80" alt="${displayName}">
+                                <span class="podium-medal">${MEDAL[rank]}</span>
+                            </div>
+                            <span class="podium-name">${displayName}</span>
+                            <span class="podium-pts">${u.points} pt</span>
+                            <span class="podium-detail">${u.insights} insight · ${u.upvotes} upvote</span>
+                            <div class="podium-base"></div>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+            }
+
+            // ── TEAM: score con breakdown dettagliato ───────────────────────
             const teamScores = {};
-            allInsights.forEach(i => {
+            published.forEach(i => {
                 const t = i.team || 'Senza Team';
-                if(!teamScores[t]) teamScores[t] = { points: 0, insightCount: 0 };
-                teamScores[t].points += 50 + ((i.upvotes || 0) * 10);
-                teamScores[t].insightCount += 1;
+                if(!teamScores[t]) teamScores[t] = { insights: 0, upvotes: 0 };
+                teamScores[t].insights += 1;
+                teamScores[t].upvotes  += (i.upvotes || 0);
             });
 
-            leaderboardTeams.innerHTML = Object.keys(teamScores)
-                .map(t => ({ name: t, ...teamScores[t] }))
-                .sort((a, b) => b.points - a.points).slice(0, 5)
-                .map((t, idx) => `
-                <li class="leaderboard-item rank-${idx+1}">
-                    <div class="rank-info">
-                        <div class="rank-number">${idx+1}</div>
-                        <div class="player-details">
-                            <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); display:flex; align-items:center; justify-content:center; color: var(--success); font-size: 1.2rem;"><i class="fa-solid fa-users"></i></div>
-                            <div><span class="player-name">${t.name}</span><span class="player-team">${t.insightCount} Insight validati</span></div>
-                        </div>
-                    </div>
-                    <div class="score-badge" style="color: var(--success); background: rgba(16, 185, 129, 0.1);">${t.points} pt</div>
-                </li>`).join('');
+            const sortedTeams = Object.entries(teamScores)
+                .map(([name, s]) => ({ name, ...s, points: s.insights * 50 + s.upvotes * 10 }))
+                .sort((a, b) => b.points - a.points);
+
+            if (sortedTeams.length === 0) {
+                leaderboardTeams.innerHTML = '<p style="color:var(--text-muted);padding:1.5rem 0;text-align:center;">Nessun dato disponibile.</p>';
+            } else {
+                const maxPts = sortedTeams[0].points;
+                leaderboardTeams.innerHTML = `<div class="team-score-list">
+                    ${sortedTeams.map((t, idx) => {
+                        const base  = t.insights * 50;
+                        const bonus = t.upvotes  * 10;
+                        const trackPct = Math.round((t.points / maxPts) * 100);
+                        const basePct  = t.points > 0 ? Math.round((base / t.points) * 100) : 0;
+                        return `<div class="team-score-item">
+                            <div class="team-score-header">
+                                <div style="display:flex;align-items:center;gap:0.6rem;">
+                                    <div class="team-rank-bubble">${idx + 1}</div>
+                                    <span class="team-name-txt">${t.name}</span>
+                                </div>
+                                <span class="team-total-pts">${t.points} pt</span>
+                            </div>
+                            <div class="team-bar-wrap">
+                                <div class="team-bar-track" style="width:${trackPct}%">
+                                    <div class="team-bar-base" style="width:${basePct}%"></div>
+                                </div>
+                            </div>
+                            <div class="team-breakdown">
+                                <span><i class="fa-solid fa-file-circle-check"></i>${t.insights} insight × 50 pt = <strong>${base} pt base</strong></span>
+                                <span><i class="fa-solid fa-check-double"></i>${t.upvotes} upvote × 10 pt = <strong>${bonus} pt bonus</strong></span>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+            }
         }
 
         function renderProfileStats() {
