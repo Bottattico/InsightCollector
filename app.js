@@ -244,8 +244,8 @@
 
         // --- UTENTE CORRENTE ---
         // (currentUser è ora gestito da Supabase Auth)
-        let points = 150;
-        let weeklyInsights = 3;
+        let points = 0;
+        let weeklyInsights = 0;
         const weeklyGoal = 5;
 
         // --- STATO ---
@@ -323,9 +323,14 @@
                         }
                     }
                 }
-                // Mostra i team dell'utente, o quelli di default se non ne ha ancora
-                const teamsToShow = userTeams.length > 0 ? userTeams : mockTeams;
-                if(teamListDOM) teamListDOM.innerHTML = teamsToShow.map(t => `<option value="${t}"></option>`).join('');
+                // Mostra i team dell'utente; fallback: tutti i team dal DB
+                if (userTeams.length > 0) {
+                    if(teamListDOM) teamListDOM.innerHTML = userTeams.map(t => `<option value="${t}"></option>`).join('');
+                } else {
+                    const { data: allDbTeams } = await supa.from('teams').select('name').order('name');
+                    const teamsToShow = (allDbTeams && allDbTeams.length > 0) ? allDbTeams.map(t => t.name) : mockTeams;
+                    if(teamListDOM) teamListDOM.innerHTML = teamsToShow.map(t => `<option value="${t}"></option>`).join('');
+                }
             } catch(e) {
                 console.error('Errore caricamento team:', e);
                 if(teamListDOM) teamListDOM.innerHTML = mockTeams.map(t => `<option value="${t}"></option>`).join('');
@@ -526,8 +531,6 @@
 
                     if (error) throw error;
 
-                    weeklyInsights += 1;
-                    updateProgressBar();
                     showToast(
                         "Insight Inserito!",
                         "Il tuo insight è in bozza. Sarà visibile a tutti dopo la validazione del tuo Team Leader.",
@@ -713,7 +716,7 @@
             if(!leaderboardInd || !leaderboardTeams) return;
             const userScores = {};
             allInsights.forEach(i => {
-                const author = i.author || 'Anonimo';
+                const author = i.author_email || i.author || 'Anonimo';
                 if(!userScores[author]) userScores[author] = { points: 0, insights: 0 };
                 userScores[author].points += 50 + ((i.upvotes || 0) * 10);
                 userScores[author].insights += 1;
@@ -762,7 +765,7 @@
         }
 
         function renderProfileStats() {
-            const myInsights = allInsights.filter(i => i.author === currentUser);
+            const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
             const myUpvotes = myInsights.reduce((sum, i) => sum + (i.upvotes || 0), 0);
             const realTotalPoints = points + (myUpvotes * 10); 
             animateValue(profileTotalPoints, 0, realTotalPoints, 800);
@@ -772,22 +775,9 @@
         
         function renderProfile() {
             renderProfileStats();
-            renderInsights(allInsights.filter(i => i.author === currentUser), profileInsightsGrid, false);
+            renderInsights(allInsights.filter(i => (i.author_email || i.author) === currentUser), profileInsightsGrid, false);
             loadUserTeams();
-
-            // Mostra bottone "Crea Team" solo per Manager e Partner
-            const createTeamBtn = document.getElementById('create-team-btn');
-            const { data: { session: currentSession } } = { data: { session: null } };
-            // Ricava il ruolo dai metadati salvati nella sessione corrente
-            supa.auth.getSession().then(({ data: { session: s } }) => {
-                if (!s) return;
-                const role = s.user.user_metadata?.role || '';
-                if (role === 'Manager' || role === 'Partner' || role === 'Associate') {
-                    if (createTeamBtn) createTeamBtn.style.display = 'flex';
-                } else {
-                    if (createTeamBtn) createTeamBtn.style.display = 'none';
-                }
-            });
+            updateNavByRole(); // gestisce anche il bottone "Crea Team" in base a currentUserOrgRole
         }
 
         // --- TEAM MANAGEMENT ---
@@ -1014,6 +1004,29 @@
             return id;
         }
 
+        function computeUserStats() {
+            if (!currentUser) return;
+            const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
+            const totalUpvotes = myInsights.reduce((s, i) => s + (i.upvotes || 0), 0);
+            points = myInsights.length * 50 + totalUpvotes * 10;
+
+            // Insight inseriti nella settimana corrente (lunedì → domenica)
+            const now = new Date();
+            const daysFromMon = now.getDay() === 0 ? 6 : now.getDay() - 1;
+            const startOfWeek = new Date(now);
+            startOfWeek.setDate(now.getDate() - daysFromMon);
+            startOfWeek.setHours(0, 0, 0, 0);
+            weeklyInsights = myInsights.filter(i => new Date(i.created_at) >= startOfWeek).length;
+
+            // Aggiorna entrambi gli span punti (topbar globale + view nuovo insight)
+            const ptTopbar = document.getElementById('total-points');
+            if (ptTopbar) ptTopbar.textContent = points;
+            const ptNew = document.getElementById('total-points-new');
+            if (ptNew) ptNew.textContent = points;
+
+            updateProgressBar();
+        }
+
         function updateProgressBar() {
             const percentage = Math.min((weeklyInsights / weeklyGoal) * 100, 100);
             weeklyProgressEl.style.width = `${percentage}%`;
@@ -1214,6 +1227,7 @@
                 }
 
                 populateClientFilter();
+                computeUserStats();
 
                 if (document.getElementById('view-esplora-dati')?.classList.contains('active'))
                     applyFilters();
