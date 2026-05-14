@@ -209,6 +209,46 @@ button { cursor: pointer; font-family: inherit; font-size: 0.95rem; font-weight:
     font-size: 1.5rem;
 }
 
+/* Insight Detail Modal */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 500;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.5rem;
+    animation: fadeIn 0.2s ease;
+}
+.modal-overlay.hidden { display: none !important; }
+.modal-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 2.5rem;
+    width: 100%; max-width: 700px;
+    max-height: 85vh;
+    overflow-y: auto;
+    position: relative;
+    box-shadow: var(--shadow-lg), 0 0 40px rgba(0,0,0,0.4);
+    animation: slideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.modal-close {
+    position: absolute; top: 1.25rem; right: 1.25rem;
+    background: var(--bg-surface-hover); border: 1px solid var(--border-color);
+    color: var(--text-secondary); border-radius: 50%;
+    width: 36px; height: 36px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; transition: var(--transition);
+}
+.modal-close:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.modal-badges { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.modal-title { font-size: 1.5rem; font-weight: 700; line-height: 1.35; color: var(--text-primary); margin-bottom: 1rem; padding-right: 2rem; }
+.modal-meta { display: flex; align-items: center; gap: 1.5rem; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.75rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
+.modal-meta img { width: 24px; height: 24px; border-radius: 50%; }
+.modal-meta-item { display: flex; align-items: center; gap: 0.4rem; }
+.modal-body { font-size: 0.95rem; color: var(--text-secondary); line-height: 1.8; white-space: pre-wrap; margin-bottom: 2rem; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 0.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color); }
+
 /* Mic Recording Animation */
 #ai-mic-btn.recording {
     background-color: rgba(239, 68, 68, 0.15) !important;

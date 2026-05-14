@@ -605,6 +605,11 @@
                         <i class="fa-solid fa-trash-can"></i></button>`
                     : '';
 
+                card.style.cursor = 'pointer';
+                card.addEventListener('click', e => {
+                    if (!e.target.closest('button')) openInsightModal(insight);
+                });
+
                 card.innerHTML = `
                     <div class="card-header">
                         <div class="card-badges">
@@ -683,6 +688,115 @@
                 });
             });
         }
+
+        // --- INSIGHT DETAIL MODAL ---
+        const insightModal    = document.getElementById('insight-modal');
+        const modalCloseBtn   = document.getElementById('modal-close-btn');
+        const modalBadgesEl   = document.getElementById('modal-badges');
+        const modalTitleEl    = document.getElementById('modal-title');
+        const modalMetaEl     = document.getElementById('modal-meta');
+        const modalBodyEl     = document.getElementById('modal-body');
+        const modalFooterEl   = document.getElementById('modal-footer');
+
+        function openInsightModal(insight) {
+            if (!insightModal) return;
+            const author      = insight.author_email || insight.author || 'Sconosciuto';
+            const dateStr     = formatDate(insight.created_at);
+            const isMyInsight = author === currentUser;
+            const alreadyUp   = myUpvotedIds.has(insight.id);
+            const isBozza     = insight.status === 'bozza';
+
+            modalBadgesEl.innerHTML = `
+                <span class="badge badge-client"><i class="fa-solid fa-building"></i> ${insight.client || 'N/A'}</span>
+                <span class="badge badge-category"><i class="fa-solid fa-tag"></i> ${insight.category || 'N/A'}</span>
+                <span class="badge badge-team"><i class="fa-solid fa-users"></i> ${insight.team || 'N/A'}</span>
+                ${insight.sector ? `<span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;">${insight.sector}</span>` : ''}
+                ${isBozza ? `<span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;"><i class="fa-solid fa-clock"></i> Bozza</span>` : ''}
+            `;
+
+            modalTitleEl.textContent = insight.title || 'Senza Titolo';
+
+            modalMetaEl.innerHTML = `
+                <div class="modal-meta-item">
+                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(author)}&background=1E293B&color=fff" alt="">
+                    <span>${author}</span>
+                </div>
+                <div class="modal-meta-item"><i class="fa-solid fa-calendar-days"></i> ${dateStr}</div>
+                <div class="modal-meta-item"><i class="fa-solid fa-check-double"></i> ${insight.upvotes || 0} utile</div>
+                ${insight.validated_by ? `<div class="modal-meta-item"><i class="fa-solid fa-circle-check" style="color:var(--success)"></i> Validato da ${insight.validated_by}</div>` : ''}
+            `;
+
+            modalBodyEl.textContent = insight.snippet || '';
+
+            // Footer: upvote + elimina
+            let upvoteBtn = '';
+            if (isMyInsight) {
+                upvoteBtn = `<span style="font-size:0.85rem;color:var(--text-muted);display:flex;align-items:center;gap:0.4rem;"><i class="fa-solid fa-check"></i> Utile (${insight.upvotes || 0})</span>`;
+            } else if (alreadyUp) {
+                upvoteBtn = `<button class="btn-upvote upvoted" disabled><i class="fa-solid fa-check-double"></i> Già votato (${insight.upvotes || 0})</button>`;
+            } else {
+                upvoteBtn = `<button class="btn-upvote" id="modal-upvote-btn"><i class="fa-solid fa-check"></i> Utile (${insight.upvotes || 0})</button>`;
+            }
+
+            const canDelete = !isStaff() && (isMyInsight || hasOrgRole('responsabile'));
+            const deleteBtn = canDelete
+                ? `<button id="modal-delete-btn" style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);padding:0.45rem 1rem;border-radius:var(--radius-full);font-size:0.85rem;display:flex;align-items:center;gap:0.4rem;"><i class="fa-solid fa-trash-can"></i> Elimina</button>`
+                : '';
+
+            modalFooterEl.innerHTML = `<div style="margin-right:auto;">${upvoteBtn}</div>${deleteBtn}`;
+
+            insightModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Upvote dalla modale
+            const modalUpvote = document.getElementById('modal-upvote-btn');
+            if (modalUpvote) {
+                modalUpvote.addEventListener('click', async () => {
+                    const newUp = (insight.upvotes || 0) + 1;
+                    modalUpvote.disabled = true;
+                    modalUpvote.innerHTML = `<i class="fa-solid fa-check-double"></i> Già votato (${newUp})`;
+                    modalUpvote.classList.add('upvoted');
+                    insight.upvotes = newUp;
+                    // Aggiorna anche il meta nella modale
+                    modalMetaEl.querySelectorAll('.modal-meta-item')[2].innerHTML = `<i class="fa-solid fa-check-double"></i> ${newUp} utile`;
+                    try {
+                        await supa.from('insights').update({ upvotes: newUp }).eq('id', insight.id);
+                        await supa.from('user_upvotes').insert([{ user_email: currentUser, insight_id: insight.id }]);
+                        myUpvotedIds.add(insight.id);
+                        showToast("Feedback Registrato", `Hai validato questa informazione.`, "fa-check-double");
+                    } catch(e) { console.error(e); }
+                });
+            }
+
+            // Elimina dalla modale
+            const modalDelete = document.getElementById('modal-delete-btn');
+            if (modalDelete) {
+                modalDelete.addEventListener('click', async () => {
+                    if (!confirm('Sei sicuro di voler eliminare questo insight?')) return;
+                    try {
+                        const { error } = await supa.from('insights').delete().eq('id', insight.id);
+                        if (error) throw error;
+                        allInsights = allInsights.filter(i => i.id !== insight.id);
+                        closeInsightModal();
+                        showToast("Insight Eliminato", "L'insight è stato rimosso.", "fa-trash-can");
+                        applyFilters();
+                        if (document.getElementById('view-profilo')?.classList.contains('active')) renderProfile();
+                    } catch(e) {
+                        showToast("Errore", "Impossibile eliminare.", "fa-triangle-exclamation", false);
+                    }
+                });
+            }
+        }
+
+        function closeInsightModal() {
+            if (!insightModal) return;
+            insightModal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+
+        if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeInsightModal);
+        if (insightModal) insightModal.addEventListener('click', e => { if (e.target === insightModal) closeInsightModal(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInsightModal(); });
 
         if (searchInput) searchInput.addEventListener('input', applyFilters);
 
