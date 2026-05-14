@@ -38,6 +38,8 @@
             return (ORG_ROLE_LEVEL[currentUserOrgRole] ?? 0) >= (ORG_ROLE_LEVEL[minRole] ?? 0);
         }
         function isStaffRole(fn) { return currentUserOrgRole === fn; }
+        const STAFF_ROLES = ['marketing', 'sales', 'hr', 'operations'];
+        function isStaff() { return STAFF_ROLES.includes(currentUserOrgRole); }
         function formatDate(iso) {
             const d = new Date(iso);
             return isNaN(d) ? 'Data sconosciuta'
@@ -262,7 +264,7 @@
         function updateNavByRole() {
             // Da Validare — team_leader+
             const validaNav = document.querySelector('[data-target="view-valida"]');
-            if (validaNav) validaNav.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
+            if (validaNav) validaNav.style.display = (hasOrgRole('team_leader') && !isStaff()) ? 'flex' : 'none';
 
             // Crea Team — team_leader+
             const createTeamBtnEl = document.getElementById('create-team-btn');
@@ -283,7 +285,7 @@
 
             // Contatore bozze nel badge nav
             const validaBadge = document.getElementById('valida-count-badge');
-            if (validaBadge && hasOrgRole('team_leader')) {
+            if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
                 validaBadge.textContent = draftInsights.length;
                 validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
             }
@@ -594,7 +596,7 @@
                 }
 
                 // Elimina: autore o responsabile+
-                const canDelete  = isMyInsight || hasOrgRole('responsabile');
+                const canDelete  = !isStaff() && (isMyInsight || hasOrgRole('responsabile'));
                 const deleteHtml = canDelete
                     ? `<button class="btn-delete-insight" data-id="${insight.id}"
                         style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);
@@ -1213,7 +1215,7 @@
 
                 // Badge nav contatore
                 const validaBadge = document.getElementById('valida-count-badge');
-                if (validaBadge && hasOrgRole('team_leader')) {
+                if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
                     validaBadge.textContent = draftInsights.length;
                     validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
                 }
