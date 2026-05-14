@@ -20,6 +20,31 @@
 
         let currentUser = null;
 
+        // ─── ROLE SYSTEM ─────────────────────────────────────────────────────
+        let currentUserOrgRole = 'consulente';
+        const ORG_ROLE_LEVEL = {
+            consulente: 0, team_leader: 1, engagement_manager: 2,
+            lead: 3, practice_manager: 4, responsabile: 5, bu_manager: 6,
+            marketing: 1, sales: 1, hr: 1, operations: 1, admin: 99
+        };
+        const ROLE_LABELS = {
+            consulente: 'Consulente', team_leader: 'Team Leader',
+            engagement_manager: 'Engagement Manager', lead: 'Lead',
+            practice_manager: 'Practice Manager', responsabile: 'Responsabile',
+            bu_manager: 'BU Manager', marketing: 'Marketing', sales: 'Sales',
+            hr: 'HR', operations: 'Operations', admin: 'Admin'
+        };
+        function hasOrgRole(minRole) {
+            return (ORG_ROLE_LEVEL[currentUserOrgRole] ?? 0) >= (ORG_ROLE_LEVEL[minRole] ?? 0);
+        }
+        function isStaffRole(fn) { return currentUserOrgRole === fn; }
+        function formatDate(iso) {
+            const d = new Date(iso);
+            return isNaN(d) ? 'Data sconosciuta'
+                : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+        }
+
+
         async function updateAuthState(session) {
             if (session) {
                 currentUser = session.user.email;
@@ -36,10 +61,6 @@
                 if(sidebarName) sidebarName.textContent = userNameDisplay;
                 if(profileName) profileName.textContent = userNameDisplay;
 
-                // Salva il nome nel greeting per updateUIByRole
-                const greetingEl = document.getElementById('topbar-greeting');
-                if(greetingEl) greetingEl.dataset.firstname = meta.first_name || userNameDisplay;
-
                 // Update Role
                 const userRole = session.user.user_metadata?.role || "Consulente";
                 const sidebarRole = document.getElementById('sidebar-role');
@@ -53,23 +74,51 @@
                 if(sidebarAv) sidebarAv.src = avatarUrl;
                 if(profileAv) profileAv.src = avatarUrl + "&size=120";
 
-                // Load Data
+                // Load Data — carica profilo, poi dati
                 try {
-                    // Carica org_role dal profilo Supabase
                     const { data: profile } = await supa
                         .from('profiles')
-                        .select('org_role')
+                        .select('org_role, first_name, last_name')
                         .eq('id', session.user.id)
                         .single();
-                    if (profile?.org_role) {
-                        currentUserOrgRole = profile.org_role;
-                    }
-                    updateUIByRole();
+
+                    if (profile?.org_role) currentUserOrgRole = profile.org_role;
+
+                    // Nome reale dal profilo DB
+                    const realFirst = profile?.first_name || meta.first_name || '';
+                    const realLast  = profile?.last_name  || meta.last_name  || '';
+                    const realName  = (realFirst && realLast) ? realFirst + ' ' + realLast
+                                    : realFirst || currentUser.split('@')[0];
+                    if (sidebarName) sidebarName.textContent = realName;
+                    if (profileName) profileName.textContent = realName;
+                    const sidebarAv2 = document.getElementById('sidebar-avatar');
+                    const profileAv2 = document.getElementById('profile-avatar-large');
+                    const av2 = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(realName) + '&background=3B82F6&color=fff';
+                    if (sidebarAv2) sidebarAv2.src = av2;
+                    if (profileAv2) profileAv2.src = av2 + '&size=120';
+
+                    // Greeting dinamico
+                    const hour = new Date().getHours();
+                    const saluto = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
+                    const greetingEl = document.getElementById('topbar-greeting');
+                    if (greetingEl) greetingEl.textContent = saluto + ', ' + (realFirst || realName);
+
+                    // Badge ruolo
+                    const orgBadge = document.getElementById('org-role-badge');
+                    if (orgBadge) orgBadge.textContent = ROLE_LABELS[currentUserOrgRole] || currentUserOrgRole;
+                    const sidebarRoleEl = document.getElementById('sidebar-role');
+                    if (sidebarRoleEl) sidebarRoleEl.textContent = ROLE_LABELS[currentUserOrgRole] || currentUserOrgRole;
+
+                    updateNavByRole();
                     await loadMyUpvotes();
-                    loadInsights();
+                    await loadInsights();
                     populateDatalists();
                 } catch(e) {
-                    console.warn("Dati non caricati (controlla tabelle SQL):", e);
+                    console.warn("Errore caricamento profilo:", e);
+                    updateNavByRole();
+                    await loadMyUpvotes();
+                    await loadInsights();
+                    populateDatalists();
                 }
             } else {
                 currentUser = null;
@@ -120,7 +169,7 @@
                     } else {
                         const nameVal = document.getElementById('auth-name')?.value.trim() || '';
                         const surnameVal = document.getElementById('auth-surname')?.value.trim() || '';
-                        const orgRoleVal = document.getElementById('auth-role')?.value || "consulente";
+                        const roleVal = document.getElementById('auth-role')?.value || "Consulente";
                         const { data, error } = await supa.auth.signUp({
                             email: authEmail.value,
                             password: authPassword.value,
@@ -128,8 +177,7 @@
                                 data: {
                                     first_name: nameVal,
                                     last_name: surnameVal,
-                                    role: orgRoleVal,
-                                    org_role: orgRoleVal
+                                    role: roleVal
                                 }
                             }
                         });
@@ -194,32 +242,52 @@
         const chatInput = document.getElementById('chat-input');
         const chatHistory = document.getElementById('chat-history');
 
+        // --- UTENTE CORRENTE ---
+        // (currentUser è ora gestito da Supabase Auth)
+        let points = 150;
+        let weeklyInsights = 3;
+        const weeklyGoal = 5;
+
         // --- STATO ---
         let allInsights = [];
         let draftInsights = [];
-        let currentUserOrgRole = 'consulente';
-        let points = 0;
-        let weeklyInsights = 0;
-        const weeklyGoal = 5;
-
-        // Livello gerarchico per confronti rapidi
-        const ORG_ROLE_LEVEL = {
-            consulente: 0, team_leader: 1, engagement_manager: 2,
-            lead: 3, practice_manager: 4, responsabile: 5, bu_manager: 6,
-            marketing: 1, sales: 1, hr: 1, operations: 1, admin: 99
-        };
-
-        // true se l'utente ha almeno il livello minRole
-        function hasOrgRole(minRole) {
-            return (ORG_ROLE_LEVEL[currentUserOrgRole] ?? 0) >= (ORG_ROLE_LEVEL[minRole] ?? 0);
-        }
-        function isStaffRole(fn) { return currentUserOrgRole === fn; }
         
         // Categorie e team base (in produzione verrebbero anche questi dal DB)
         let mockCategories = ["Strategia", "Tecnologia", "Processi", "Competitor", "Cultura", "CyberSecurity"];
         let mockTeams = ["Team AI Transformation", "Team Cloud Journey", "Team Agile Governance", "Team CyberSecurity"];
         let dbClients = [];
         let userTeams = [];
+
+        // ─── NAVIGAZIONE PER RUOLO ───────────────────────────────────────────
+        function updateNavByRole() {
+            // Da Validare — team_leader+
+            const validaNav = document.querySelector('[data-target="view-valida"]');
+            if (validaNav) validaNav.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
+
+            // Crea Team — team_leader+
+            const createTeamBtnEl = document.getElementById('create-team-btn');
+            if (createTeamBtnEl) createTeamBtnEl.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
+
+            // Esporta — lead+
+            const exportBtn = document.getElementById('export-btn');
+            if (exportBtn) exportBtn.style.display = hasOrgRole('lead') ? 'flex' : 'none';
+
+            // Analytics — engagement_manager+
+            const analyticsNav = document.querySelector('[data-target="view-analytics"]');
+            if (analyticsNav) analyticsNav.style.display = hasOrgRole('engagement_manager') ? 'flex' : 'none';
+
+            // Social AI — marketing, sales o admin
+            const socialNav = document.querySelector('[data-target="view-marketing"]');
+            if (socialNav) socialNav.style.display =
+                (isStaffRole('marketing') || isStaffRole('sales') || currentUserOrgRole === 'admin') ? 'flex' : 'none';
+
+            // Contatore bozze nel badge nav
+            const validaBadge = document.getElementById('valida-count-badge');
+            if (validaBadge && hasOrgRole('team_leader')) {
+                validaBadge.textContent = draftInsights.length;
+                validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
+            }
+        }
 
         async function populateDatalists() {
             if(categoryListDOM) categoryListDOM.innerHTML = mockCategories.map(c => `<option value="${c}"></option>`).join('');
@@ -263,82 +331,7 @@
                 if(teamListDOM) teamListDOM.innerHTML = mockTeams.map(t => `<option value="${t}"></option>`).join('');
             }
         }
-        // Non chiamare populateDatalists qui — viene chiamato dopo login da updateAuthState
-
-        // --- AGGIORNAMENTO UI IN BASE AL RUOLO ---
-        function updateUIByRole() {
-            // ── Da Validare — solo team_leader+
-            const validaNav = document.querySelector('[data-target="view-valida"]');
-            if (validaNav) {
-                validaNav.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
-            }
-
-            // ── Nuovo Insight: solo team_leader+ può inserire
-            const nuovoInsightNav = document.querySelector('[data-target="view-nuovo-insight"]');
-            if (nuovoInsightNav) {
-                nuovoInsightNav.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
-            }
-
-            // ── Crea Team: solo team_leader+
-            const createTeamBtnEl = document.getElementById('create-team-btn');
-            if (createTeamBtnEl) {
-                createTeamBtnEl.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
-            }
-
-            // ── Se consulente base, redireziona a Esplora (vista default)
-            if (!hasOrgRole('team_leader')) {
-                const nuovoView = document.getElementById('view-nuovo-insight');
-                if (nuovoView && nuovoView.classList.contains('active')) {
-                    nuovoView.classList.remove('active');
-                    nuovoView.classList.add('hidden');
-                    const esploraView = document.getElementById('view-esplora-dati');
-                    if (esploraView) {
-                        esploraView.classList.remove('hidden');
-                        esploraView.classList.add('active');
-                    }
-                    // Attiva nav item Esplora
-                    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-                    const esploraNav = document.querySelector('[data-target="view-esplora-dati"]');
-                    if (esploraNav) esploraNav.classList.add('active');
-                }
-            }
-
-            // ── Esporta CSV — solo lead+
-            const exportBtn = document.getElementById('export-btn');
-            if (exportBtn) exportBtn.style.display = hasOrgRole('lead') ? 'flex' : 'none';
-
-            // ── Marketing AI — solo marketing o admin
-            const marketingNav = document.querySelector('[data-target="view-marketing"]');
-            if (marketingNav) marketingNav.style.display =
-                (isStaffRole('marketing') || currentUserOrgRole === 'admin') ? 'flex' : 'none';
-
-            // ── Analytics — solo practice_manager+
-            const analyticsNav = document.querySelector('[data-target="view-analytics"]');
-            if (analyticsNav) analyticsNav.style.display = hasOrgRole('practice_manager') ? 'flex' : 'none';
-
-            // ── Badge ruolo org
-            const orgRoleBadge = document.getElementById('org-role-badge');
-            if (orgRoleBadge) {
-                const labels = {
-                    consulente: 'Consulente', team_leader: 'Team Leader',
-                    engagement_manager: 'Engagement Manager', lead: 'Lead',
-                    practice_manager: 'Practice Manager', responsabile: 'Responsabile',
-                    bu_manager: 'BU Manager', marketing: 'Marketing', sales: 'Sales',
-                    hr: 'HR', operations: 'Operations', admin: 'Admin'
-                };
-                const roleLabel = labels[currentUserOrgRole] || currentUserOrgRole;
-                orgRoleBadge.textContent = roleLabel;
-
-                // Greeting dinamico
-                const hour = new Date().getHours();
-                const saluto = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
-                const greetingEl = document.getElementById('topbar-greeting');
-                if (greetingEl) {
-                    const firstName = greetingEl.dataset.firstname || roleLabel;
-                    greetingEl.textContent = `${saluto}, ${firstName}`;
-                }
-            }
-        }
+        populateDatalists();
 
         // --- UPVOTES PERSISTENTI ---
         let myUpvotedIds = new Set();
@@ -488,9 +481,8 @@
                     if(targetId === 'view-ai') targetSection.style.display = 'flex';
                     
                     if(targetId === 'view-esplora-dati') {
-                        // Ricarichiamo dal db ogni volta che entra per freschezza
-                        loadInsights(); 
-                        renderInsights(allInsights, insightsGrid, true);
+                        await loadInsights();
+                        applyFilters();
                         if(searchInput) searchInput.value = '';
                     }
                     if(targetId === 'view-valida')     renderDraftInsights();
@@ -508,54 +500,51 @@
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Salvataggio...';
 
-                const titleVal = document.getElementById('title').value.trim();
-                const clientVal = document.getElementById('client').value.trim();
-                const catVal = document.getElementById('category').value.trim();
-                const teamVal = document.getElementById('team').value.trim();
+                const titleVal   = document.getElementById('title').value.trim();
+                const clientVal  = document.getElementById('client').value.trim();
+                const catVal     = document.getElementById('category').value.trim();
+                const teamVal    = document.getElementById('team').value.trim();
                 const detailsVal = document.getElementById('details').value.trim();
-                const confidentialityVal = document.getElementById('confidentiality')?.value || 'pubblico';
-                
+                const sectorVal  = document.getElementById('sector')?.value.trim() || '';
+
                 try {
-                    // INSERIMENTO REALE SUPABASE
                     const { data: authData } = await supa.auth.getSession();
                     const { data, error } = await supa
                         .from('insights')
-                        .insert([
-                            { 
-                                title: titleVal, 
-                                client: clientVal, 
-                                category: catVal, 
-                                team: teamVal, 
-                                snippet: detailsVal, 
-                                author_email: currentUser,
-                                author_id: authData?.session?.user?.id || null,
-                                upvotes: 0,
-                                confidentiality: confidentialityVal
-                            }
-                        ]);
+                        .insert([{
+                            title:        titleVal,
+                            client:       clientVal,
+                            category:     catVal,
+                            team:         teamVal,
+                            sector:       sectorVal,
+                            snippet:      detailsVal,
+                            author_email: currentUser,
+                            author_id:    authData?.session?.user?.id || null,
+                            upvotes:      0,
+                            status:       'bozza'
+                        }]);
 
                     if (error) throw error;
 
-                    points += 50; 
                     weeklyInsights += 1;
-                    animateValue(totalPointsEl, points - 50, points, 1000);
                     updateProgressBar();
-                    showToast("Insight Inviato!", `Hai guadagnato <strong class="highlight">+50 punti</strong> per il tuo contributo.`, "fa-check-circle");
+                    showToast(
+                        "Insight Inserito!",
+                        "Il tuo insight è in bozza. Sarà visibile a tutti dopo la validazione del tuo Team Leader.",
+                        "fa-hourglass-half"
+                    );
 
-                    form.reset(); 
-                    
-                    // Auto-aggiungi il cliente alla tabella clients se è nuovo
+                    form.reset();
+
                     if (clientVal && !dbClients.includes(clientVal)) {
-                        await supa.from('clients').insert([{ name: clientVal }]).single();
-                        populateDatalists(); // Ricarica la lista
+                        await supa.from('clients').insert([{ name: clientVal }]);
+                        populateDatalists();
                     }
 
-                    // Ricarica dati
-                    loadInsights();
+                    await loadInsights();
 
-                    // Cambia vista
                     const esploraLink = document.querySelector('[data-target="view-esplora-dati"]');
-                    if(esploraLink) esploraLink.click();
+                    if (esploraLink) esploraLink.click();
 
                 } catch (err) {
                     console.error("Errore salvataggio:", err);
@@ -586,24 +575,18 @@
                 const dateObj = new Date(insight.created_at);
                 const dateStr = isNaN(dateObj) ? "Data sconosciuta" : dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 
-                // Anonimato: i team_leader+ vedono gli autori; consulenti base vedono anonimo
-                const canSeeAuthor = !forceAnonymous || hasOrgRole('team_leader');
-                const rawAuthor = insight.author_email || insight.author || "Utente Sconosciuto";
-                const displayAuthor = canSeeAuthor ? rawAuthor : "Consulente (Anonimo)";
-                const avatarUrl = canSeeAuthor
-                    ? `https://ui-avatars.com/api/?name=${rawAuthor.replace('@','').replace('.',' ')}&background=1E293B&color=fff`
-                    : "https://ui-avatars.com/api/?name=C+A&background=1E293B&color=94A3B8";
+                // Autore e avatar
+                const rawAuthor     = insight.author_email || insight.author || 'Utente Sconosciuto';
+                const displayAuthor = rawAuthor;
+                const avatarUrl     = `https://ui-avatars.com/api/?name=${encodeURIComponent(rawAuthor)}&background=1E293B&color=fff`;
+                const displayClient = insight.client || 'N/A';
 
-                // Confidenzialità: badge e oscuramento cliente
-                const conf = insight.confidentiality || 'pubblico';
-                const confBadge = conf === 'segreto'
-                    ? `<span class="badge" style="background:rgba(239,68,68,0.1);color:#EF4444;font-size:0.7rem;"><i class="fa-solid fa-lock"></i> Segreto</span>`
-                    : conf === 'riservato'
-                    ? `<span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;font-size:0.7rem;"><i class="fa-solid fa-eye-slash"></i> Riservato</span>`
+                // Badge bozza
+                const isBozza    = insight.status === 'bozza';
+                const bozzaBadge = isBozza
+                    ? `<span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;font-size:0.7rem;"><i class="fa-solid fa-clock"></i> Bozza</span>`
                     : '';
-                const displayClient = conf === 'riservato' ? 'Cliente Riservato' : (insight.client || 'N/A');
 
-                // Upvote
                 const isMyInsight = (insight.author_email || insight.author) === currentUser;
                 const alreadyUpvoted = myUpvotedIds.has(insight.id);
                 let upvoteHtml;
@@ -615,10 +598,14 @@
                     upvoteHtml = `<button class="btn-upvote" data-id="${insight.id}"><i class="fa-solid fa-check"></i> Utile <span class="upvote-count">(${insight.upvotes || 0})</span></button>`;
                 }
 
-                // Elimina: autore, oppure responsabile+
-                const canDelete = isMyInsight || hasOrgRole('responsabile');
+                // Elimina: autore o responsabile+
+                const canDelete  = isMyInsight || hasOrgRole('responsabile');
                 const deleteHtml = canDelete
-                    ? `<button class="btn-delete-insight" data-id="${insight.id}" style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);padding:0.35rem 0.75rem;border-radius:var(--radius-full);font-size:0.8rem;display:flex;align-items:center;gap:0.4rem;" title="Elimina insight"><i class="fa-solid fa-trash-can"></i></button>`
+                    ? `<button class="btn-delete-insight" data-id="${insight.id}"
+                        style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);
+                               padding:0.35rem 0.75rem;border-radius:var(--radius-full);font-size:0.8rem;
+                               display:flex;align-items:center;gap:0.4rem;" title="Elimina insight">
+                        <i class="fa-solid fa-trash-can"></i></button>`
                     : '';
 
                 card.innerHTML = `
@@ -627,7 +614,6 @@
                             <span class="badge badge-client"><i class="fa-solid fa-building"></i> ${displayClient}</span>
                             <span class="badge badge-category"><i class="fa-solid fa-tag"></i> ${insight.category || 'N/A'}</span>
                             <span class="badge badge-team"><i class="fa-solid fa-users"></i> ${insight.team || 'N/A'}</span>
-                            ${confBadge}
                         </div>
                     </div>
                     <h3 class="card-title">${insight.title || 'Senza Titolo'}</h3>
@@ -644,8 +630,8 @@
                     </div>
                 `;
                 container.appendChild(card);
+            });
 
-            }); // fine forEach insights
             // Gestione UPVOTE (Update in Supabase)
             container.querySelectorAll('.btn-upvote').forEach(btn => {
                 btn.addEventListener('click', async function() {
@@ -688,8 +674,7 @@
                         const { error } = await supa.from('insights').delete().eq('id', id);
                         if (error) throw error;
                         
-                        // Rimuovi dalla lista locale
-                        allInsights = allInsights.filter(i => i.id != id);
+                        allInsights = allInsights.filter(i => i.id !== id);
                         showToast("Insight Eliminato", "L'insight è stato rimosso dal database.", "fa-trash-can");
                         
                         // Ricarica la vista profilo
@@ -702,18 +687,24 @@
             });
         }
 
-        if(searchInput) {
-            searchInput.addEventListener('input', (e) => {
-                const query = e.target.value.toLowerCase().trim();
-                if(query === '') { renderInsights(allInsights, insightsGrid, true); return; }
-                const filtered = allInsights.filter(insight => {
-                    return (insight.title || '').toLowerCase().includes(query) || 
-                           (insight.client || '').toLowerCase().includes(query) ||
-                           (insight.category || '').toLowerCase().includes(query) || 
-                           (insight.team || '').toLowerCase().includes(query) ||
-                           (insight.snippet || '').toLowerCase().includes(query);
+        if (searchInput) searchInput.addEventListener('input', applyFilters);
+
+        ['filter-client', 'filter-sector', 'filter-category'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', applyFilters);
+        });
+
+        const filterResetBtn = document.getElementById('filter-reset');
+        if (filterResetBtn) {
+            filterResetBtn.addEventListener('click', () => {
+                if (searchInput) searchInput.value = '';
+                ['filter-client','filter-sector','filter-category'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
                 });
-                renderInsights(filtered, insightsGrid, true);
+                const countEl = document.getElementById('filter-count');
+                if (countEl) countEl.textContent = '';
+                renderInsights(allInsights, insightsGrid, true);
             });
         }
 
@@ -722,16 +713,14 @@
             if(!leaderboardInd || !leaderboardTeams) return;
             const userScores = {};
             allInsights.forEach(i => {
-                const author = i.author_email || i.author || 'Anonimo';
+                const author = i.author || 'Anonimo';
                 if(!userScores[author]) userScores[author] = { points: 0, insights: 0 };
                 userScores[author].points += 50 + ((i.upvotes || 0) * 10);
                 userScores[author].insights += 1;
             });
 
-            // Aggiungi l'utente corrente solo se ha davvero inserito insight
-            if(currentUser && !userScores[currentUser] && points > 0) {
-                userScores[currentUser] = { points, insights: allInsights.filter(i => (i.author_email || i.author) === currentUser).length };
-            }
+            // Aggiungi l'utente corrente se non c'è
+            if(!userScores[currentUser]) userScores[currentUser] = { points: points, insights: weeklyInsights };
 
             leaderboardInd.innerHTML = Object.keys(userScores)
                 .map(u => ({ name: u, ...userScores[u] }))
@@ -773,7 +762,7 @@
         }
 
         function renderProfileStats() {
-            const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
+            const myInsights = allInsights.filter(i => i.author === currentUser);
             const myUpvotes = myInsights.reduce((sum, i) => sum + (i.upvotes || 0), 0);
             const realTotalPoints = points + (myUpvotes * 10); 
             animateValue(profileTotalPoints, 0, realTotalPoints, 800);
@@ -783,14 +772,22 @@
         
         function renderProfile() {
             renderProfileStats();
-            renderInsights(allInsights.filter(i => (i.author_email || i.author) === currentUser), profileInsightsGrid, false);
+            renderInsights(allInsights.filter(i => i.author === currentUser), profileInsightsGrid, false);
             loadUserTeams();
 
-            // Crea Team — solo team_leader+
+            // Mostra bottone "Crea Team" solo per Manager e Partner
             const createTeamBtn = document.getElementById('create-team-btn');
-            if (createTeamBtn) {
-                createTeamBtn.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
-            }
+            const { data: { session: currentSession } } = { data: { session: null } };
+            // Ricava il ruolo dai metadati salvati nella sessione corrente
+            supa.auth.getSession().then(({ data: { session: s } }) => {
+                if (!s) return;
+                const role = s.user.user_metadata?.role || '';
+                if (role === 'Manager' || role === 'Partner' || role === 'Associate') {
+                    if (createTeamBtn) createTeamBtn.style.display = 'flex';
+                } else {
+                    if (createTeamBtn) createTeamBtn.style.display = 'none';
+                }
+            });
         }
 
         // --- TEAM MANAGEMENT ---
@@ -1070,103 +1067,43 @@
             window.requestAnimationFrame(step);
         }
         
-        // --- FUNZIONI SUPABASE DATA FETCH ---
-        async function loadInsights() {
-            try {
-                const { data, error } = await supa
-                    .from('insights')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                
-                if (error) {
-                    console.error("Errore fetch Supabase:", error);
-                    return;
-                }
-                
-                const all = data || [];
+        // ─── FILTRI ESPLORA ───────────────────────────────────────────────────
+        function applyFilters() {
+            const q      = (searchInput?.value || '').toLowerCase().trim();
+            const client = document.getElementById('filter-client')?.value  || '';
+            const sector = document.getElementById('filter-sector')?.value  || '';
+            const cat    = document.getElementById('filter-category')?.value || '';
 
-                // Esplora mostra solo pubblicati + le mie bozze
-                allInsights = all.filter(i =>
-                    i.status === 'pubblicato' ||
-                    (i.author_email || i.author) === currentUser
-                );
+            const filtered = allInsights.filter(i => {
+                const matchQ = !q || [i.title, i.client, i.category, i.team, i.snippet, i.sector]
+                    .some(f => (f || '').toLowerCase().includes(q));
+                const matchClient = !client || (i.client || '') === client;
+                const matchSector = !sector || (i.sector || '') === sector;
+                const matchCat    = !cat    || (i.category || '') === cat;
+                return matchQ && matchClient && matchSector && matchCat;
+            });
 
-                // Bozze da validare: tutte le bozze non mie (per chi può validare)
-                draftInsights = all.filter(i =>
-                    i.status === 'bozza' &&
-                    (i.author_email || i.author) !== currentUser
-                );
+            const countEl = document.getElementById('filter-count');
+            if (countEl) countEl.textContent = filtered.length < allInsights.length
+                ? filtered.length + ' di ' + allInsights.length + ' insight' : '';
 
-                // Calcolo badge milestone
-                const myAll = all.filter(i => (i.author_email || i.author) === currentUser);
-                checkAndAwardBadges(myAll);
-
-                // Aggiorna contatore "Da Validare" nel menu
-                const validaBadge = document.getElementById('valida-count-badge');
-                if (validaBadge) {
-                    validaBadge.textContent = draftInsights.length;
-                    validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
-                }
-
-                // Refresh viste aperte
-                if (document.getElementById('view-esplora-dati')?.classList.contains('active')) {
-                    renderInsights(allInsights, insightsGrid);
-                }
-                if (document.getElementById('view-valida')?.classList.contains('active')) {
-                    renderDraftInsights();
-                }
-                if (document.getElementById('view-profilo')?.classList.contains('active')) {
-                    renderProfile();
-                }
-
-            } catch (e) {
-                console.error("Errore caricamento DB:", e);
-            }
+            renderInsights(filtered, insightsGrid, true);
         }
 
-        // ─── UTILS ───────────────────────────────────────────────────────────
-        function formatDate(iso) {
-            const d = new Date(iso);
-            return isNaN(d) ? 'Data sconosciuta'
-                : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+        function populateClientFilter() {
+            const sel = document.getElementById('filter-client');
+            if (!sel) return;
+            const clients = [...new Set(allInsights.map(i => i.client).filter(Boolean))].sort();
+            sel.innerHTML = '<option value="">🏢 Tutti i clienti</option>' +
+                clients.map(c => `<option value="${c}">${c}</option>`).join('');
         }
 
-        // ─── BADGE MILESTONE ──────────────────────────────────────────────────
-        const BADGE_DEFINITIONS = {
-            primo_insight:     { label: '🌱 Primo Passo',        desc: 'Hai inserito il tuo primo insight' },
-            insight_5:         { label: '📚 Knowledge Builder',  desc: 'Hai inserito 5 insight' },
-            insight_10:        { label: '🧠 Expert Contributor', desc: 'Hai inserito 10 insight' },
-            prima_validazione: { label: '✅ Validato!',           desc: 'Il tuo primo insight è stato validato' },
-            validazioni_5:     { label: '🏅 Affidabile',         desc: '5 tuoi insight validati dalla community' },
-            team_player:       { label: '🤝 Team Player',        desc: 'Hai validato 3 insight di colleghi' },
-            knowledge_sharer:  { label: '💡 Knowledge Sharer',   desc: 'Hai ricevuto 10 upvote totali' },
-        };
-
-        async function checkAndAwardBadges(myInsights) {
-            const toAward = [];
-            const published = myInsights.filter(i => i.status === 'pubblicato');
-
-            if (myInsights.length >= 1)  toAward.push('primo_insight');
-            if (myInsights.length >= 5)  toAward.push('insight_5');
-            if (myInsights.length >= 10) toAward.push('insight_10');
-            if (published.length >= 1)   toAward.push('prima_validazione');
-            if (published.length >= 5)   toAward.push('validazioni_5');
-            const myUpvotes = myInsights.reduce((s, i) => s + (i.upvotes || 0), 0);
-            if (myUpvotes >= 10) toAward.push('knowledge_sharer');
-
-            for (const key of toAward) {
-                // upsert con onConflict — non genera errori se già esiste
-                await supa.from('badges')
-                    .upsert({ user_email: currentUser, badge_key: key }, { onConflict: 'user_email,badge_key', ignoreDuplicates: true });
-            }
-        }
-
+        // ─── RENDER BOZZE DA VALIDARE ────────────────────────────────────────
         async function renderDraftInsights() {
             const container = document.getElementById('draft-insights-grid');
             if (!container) return;
-            container.innerHTML = '<p style="color:var(--text-muted);">Caricamento...</p>';
+            container.innerHTML = '<p style="color:var(--text-muted);padding:1rem 0;">Caricamento...</p>';
 
-            // Carica direttamente dal DB tutte le bozze non mie
             const { data, error } = await supa
                 .from('insights')
                 .select('*')
@@ -1174,62 +1111,50 @@
                 .neq('author_email', currentUser)
                 .order('created_at', { ascending: false });
 
-            if (error) {
-                container.innerHTML = '<p style="color:var(--danger);">Errore caricamento bozze.</p>';
-                return;
-            }
+            if (error) { container.innerHTML = '<p style="color:var(--danger);">Errore caricamento bozze.</p>'; return; }
 
             let toShow = data || [];
 
-            // team_leader vede solo bozze del proprio team; responsabile+ vede tutte
+            // team_leader: solo bozze del proprio team; responsabile+: tutte
             if (!hasOrgRole('responsabile') && toShow.length > 0) {
-                const { data: memberships } = await supa
-                    .from('team_members').select('team_id').eq('user_email', currentUser);
-                const { data: myTeams } = await supa
-                    .from('teams').select('name')
-                    .in('id', (memberships || []).map(m => m.team_id));
-                const myTeamNames = (myTeams || []).map(t => t.name);
+                const { data: mem } = await supa.from('team_members').select('team_id').eq('user_email', currentUser);
+                const { data: myT } = await supa.from('teams').select('name').in('id', (mem || []).map(m => m.team_id));
+                const myTeamNames   = (myT || []).map(t => t.name);
                 toShow = toShow.filter(i => !i.team || myTeamNames.includes(i.team));
             }
 
             container.innerHTML = '';
-
             if (toShow.length === 0) {
-                container.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;padding:2rem 0;">Nessun insight in attesa di validazione. Ottimo lavoro del team!</p>';
+                container.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;padding:2rem 0;">Nessun insight in attesa di validazione. Il tuo team è in pari!</p>';
                 return;
             }
 
             toShow.forEach(insight => {
                 const card = document.createElement('div');
                 card.className = 'insight-card';
-                card.style.border = '1px solid rgba(245,158,11,0.4)';
-                const dateStr = formatDate(insight.created_at);
-                const rawAuthor = insight.author_email || 'Utente Sconosciuto';
+                card.style.borderColor = 'rgba(245,158,11,0.4)';
+                const author = insight.author_email || 'Utente Sconosciuto';
                 card.innerHTML = `
-                    <div class="card-header">
-                        <div class="card-badges">
-                            <span class="badge badge-client"><i class="fa-solid fa-building"></i> ${insight.client || 'N/A'}</span>
-                            <span class="badge badge-category"><i class="fa-solid fa-tag"></i> ${insight.category || 'N/A'}</span>
-                            <span class="badge badge-team"><i class="fa-solid fa-users"></i> ${insight.team || 'N/A'}</span>
-                            <span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;font-size:0.7rem;">
-                                <i class="fa-solid fa-clock"></i> In attesa
-                            </span>
-                        </div>
-                    </div>
+                    <div class="card-header"><div class="card-badges">
+                        <span class="badge badge-client"><i class="fa-solid fa-building"></i> ${insight.client || 'N/A'}</span>
+                        <span class="badge badge-category"><i class="fa-solid fa-tag"></i> ${insight.category || 'N/A'}</span>
+                        <span class="badge badge-team"><i class="fa-solid fa-users"></i> ${insight.team || 'N/A'}</span>
+                        <span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;font-size:0.7rem;"><i class="fa-solid fa-clock"></i> In attesa</span>
+                    </div></div>
                     <h3 class="card-title">${insight.title || 'Senza Titolo'}</h3>
                     <p class="card-snippet">${insight.snippet || ''}</p>
                     <div class="card-footer">
                         <div class="card-author">
-                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(rawAuthor)}&background=1E293B&color=fff" alt="Author">
-                            <span>${rawAuthor} • ${dateStr}</span>
+                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(author)}&background=1E293B&color=fff" alt="">
+                            <span>${author} • ${formatDate(insight.created_at)}</span>
                         </div>
-                        <button class="btn-valida btn-primary" data-id="${insight.id}"
-                            style="padding:0.4rem 1rem;font-size:0.85rem;background:rgba(16,185,129,0.15);
-                                   color:#10B981;border:1px solid rgba(16,185,129,0.3);">
+                        <button class="btn-valida" data-id="${insight.id}"
+                            style="padding:0.4rem 1rem;font-size:0.85rem;background:rgba(16,185,129,0.12);
+                                   color:#10B981;border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-full);
+                                   cursor:pointer;display:flex;align-items:center;gap:0.4rem;">
                             <i class="fa-solid fa-check-circle"></i> Valida
                         </button>
-                    </div>
-                `;
+                    </div>`;
                 container.appendChild(card);
             });
 
@@ -1240,18 +1165,14 @@
                     this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
                     try {
                         const { error } = await supa.from('insights').update({
-                            status: 'pubblicato',
+                            status:       'pubblicato',
                             validated_by: currentUser,
                             validated_at: new Date().toISOString()
                         }).eq('id', id);
                         if (error) throw error;
-                        await supa.from('badges').upsert(
-                            { user_email: currentUser, badge_key: 'team_player' },
-                            { onConflict: 'user_email,badge_key', ignoreDuplicates: true }
-                        );
-                        showToast('Insight Validato!', 'L\'insight è ora visibile a tutti i consulenti.', 'fa-check-circle');
+                        showToast('Insight Validato!', "L'insight è ora visibile a tutta l'organizzazione.", 'fa-check-circle');
                         await loadInsights();
-                        renderDraftInsights();
+                        await renderDraftInsights();
                     } catch (err) {
                         showToast('Errore', 'Impossibile validare: ' + err.message, 'fa-triangle-exclamation', false);
                         this.disabled = false;
@@ -1259,6 +1180,49 @@
                     }
                 });
             });
+        }
+
+        // --- FUNZIONI SUPABASE DATA FETCH ---
+        async function loadInsights() {
+            try {
+                const { data, error } = await supa
+                    .from('insights')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) { console.error("Errore fetch Supabase:", error); return; }
+
+                const all = data || [];
+
+                // Esplora: pubblicati + proprie bozze
+                allInsights = all.filter(i =>
+                    i.status === 'pubblicato' ||
+                    (i.author_email || i.author) === currentUser
+                );
+
+                // Bozze altrui per validazione
+                draftInsights = all.filter(i =>
+                    i.status === 'bozza' &&
+                    (i.author_email || i.author) !== currentUser
+                );
+
+                // Badge nav contatore
+                const validaBadge = document.getElementById('valida-count-badge');
+                if (validaBadge && hasOrgRole('team_leader')) {
+                    validaBadge.textContent = draftInsights.length;
+                    validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
+                }
+
+                populateClientFilter();
+
+                if (document.getElementById('view-esplora-dati')?.classList.contains('active'))
+                    applyFilters();
+                if (document.getElementById('view-valida')?.classList.contains('active'))
+                    renderDraftInsights();
+                if (document.getElementById('view-profilo')?.classList.contains('active'))
+                    renderProfile();
+
+            } catch (e) { console.error("Errore caricamento DB:", e); }
         }
 
     } catch(err) {

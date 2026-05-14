@@ -76,6 +76,10 @@
                 <a href="#" class="nav-item active" data-target="view-nuovo-insight"><i class="fa-solid fa-plus-circle"></i> Nuovo Insight</a>
                 <a href="#" class="nav-item" data-target="view-esplora-dati"><i class="fa-solid fa-database"></i> Esplora Dati</a>
                 <a href="#" class="nav-item" data-target="view-ai" style="margin-bottom: 1rem; border: 1px solid var(--accent-primary); background: rgba(59, 130, 246, 0.05);"><i class="fa-solid fa-robot" style="color: var(--accent-primary);"></i> BTO Insight Brain</a>
+                <a href="#" class="nav-item" data-target="view-valida" style="display:none;position:relative;">
+                    <i class="fa-solid fa-circle-check"></i> Da Validare
+                    <span id="valida-count-badge" style="display:none;position:absolute;right:0.75rem;top:50%;transform:translateY(-50%);background:var(--accent-primary);color:#fff;border-radius:999px;font-size:0.7rem;padding:0.15rem 0.5rem;font-weight:700;min-width:18px;text-align:center;"></span>
+                </a>
                 <a href="#" class="nav-item" data-target="view-classifica"><i class="fa-solid fa-trophy"></i> Classifiche</a>
             </nav>
         </aside>
@@ -84,13 +88,13 @@
         <main class="main-content">
             <header class="topbar">
                 <div class="greeting">
-                    <h1 id="topbar-greeting">Buongiorno</h1>
+                    <h1 id="topbar-greeting">Benvenuto</h1>
                     <p>Cosa vuoi scoprire oggi?</p>
                 </div>
                 <div class="topbar-right" style="display: flex; align-items: center; gap: 1.5rem;">
                     <div class="gamification-summary">
                         <div class="points-badge" title="Punti totali">
-                            <i class="fa-solid fa-star"></i> <span id="total-points">0</span>
+                            <i class="fa-solid fa-star"></i> <span id="total-points">150</span>
                         </div>
                     </div>
                     
@@ -154,8 +158,7 @@
                     <div class="gamification-summary">
                         <div class="points-badge">
                             <i class="fa-solid fa-star"></i>
-                            <span id="total-points">0
-                            </span> Punti
+                            <span id="total-points">150</span> Punti
                         </div>
                     </div>
                 </header>
@@ -167,7 +170,7 @@
                             <span id="goal-text">0/5 Insight</span>
                         </div>
                         <div class="progress-bar-container">
-                            <div class="progress-bar" id="weekly-progress" style="width: 0%;"></div>
+                            <div class="progress-bar" id="weekly-progress" style="width: 60%;"></div>
                         </div>
                         <p class="goal-hint">Ancora 5 insight per sbloccare il badge "Observer della Settimana"!</p>
                     </section>
@@ -208,7 +211,7 @@
                             
                             <div class="form-row">
                                 <div class="form-group half-width">
-                                    <label for="client">Cliente (Seleziona o scrivi un nuovo nome)</label>
+                                    <label for="client">Cliente</label>
                                     <input list="client-list" id="client" placeholder="Cerca o inserisci cliente..." required autocomplete="off">
                                     <datalist id="client-list"></datalist>
                                 </div>
@@ -221,17 +224,25 @@
 
                             <div class="form-row">
                                 <div class="form-group half-width">
-                                    <label for="team">Team di Progetto (Seleziona o crea nuovo)</label>
+                                    <label for="team">Team di Progetto</label>
                                     <input list="team-list" id="team" placeholder="Es. Team AI Transformation..." required autocomplete="off">
                                     <datalist id="team-list"></datalist>
                                 </div>
                                 <div class="form-group half-width">
-                                    <label for="confidentiality">Livello di Confidenzialità</label>
-                                    <select id="confidentiality" required style="width:100%;padding:0.75rem;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--radius-md);color:var(--text-primary);font-size:0.9rem;">
-                                        <option value="pubblico">🟢 Pubblico — cliente visibile</option>
-                                        <option value="riservato">🟡 Riservato — cliente anonimo</option>
-                                        <option value="segreto">🔴 Segreto — solo per me</option>
-                                    </select>
+                                    <label for="sector">Settore</label>
+                                    <input list="sector-list" id="sector" placeholder="Es. Retail, Finance..." autocomplete="off">
+                                    <datalist id="sector-list">
+                                        <option value="Manifatturiero"></option>
+                                        <option value="Retail"></option>
+                                        <option value="Finance"></option>
+                                        <option value="Energy & Utilities"></option>
+                                        <option value="Food & Beverage"></option>
+                                        <option value="Pharma"></option>
+                                        <option value="Media & Publishing"></option>
+                                        <option value="Automotive"></option>
+                                        <option value="Telco"></option>
+                                        <option value="Pubblica Amministrazione"></option>
+                                    </datalist>
                                 </div>
                             </div>
 
@@ -275,9 +286,35 @@
                 </header>
 
                 <div class="content-wrapper explore-wrapper">
-                    <!-- Note anonimato -->
-                    <div style="margin-bottom: 1rem; padding: 1rem; background: rgba(59,130,246,0.1); border-radius: var(--radius-md); font-size: 0.85rem; color: var(--accent-primary);">
-                        <i class="fa-solid fa-user-secret"></i> <strong>Modalità Anonima Attiva:</strong> Per evitare bias e favorire una valutazione oggettiva della conoscenza, tutti gli insight sono mostrati in forma anonima.
+                    <!-- Filtri -->
+                    <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:center;">
+                        <select id="filter-client" style="padding:0.5rem 0.9rem;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--radius-md);color:var(--text-primary);font-size:0.875rem;">
+                            <option value="">🏢 Tutti i clienti</option>
+                        </select>
+                        <select id="filter-sector" style="padding:0.5rem 0.9rem;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--radius-md);color:var(--text-primary);font-size:0.875rem;">
+                            <option value="">🏭 Tutti i settori</option>
+                            <option value="Manifatturiero">Manifatturiero</option>
+                            <option value="Retail">Retail</option>
+                            <option value="Finance">Finance</option>
+                            <option value="Energy & Utilities">Energy &amp; Utilities</option>
+                            <option value="Food & Beverage">Food &amp; Beverage</option>
+                            <option value="Pharma">Pharma</option>
+                            <option value="Media & Publishing">Media &amp; Publishing</option>
+                            <option value="Automotive">Automotive</option>
+                            <option value="Telco">Telco</option>
+                            <option value="Pubblica Amministrazione">Pubblica Amministrazione</option>
+                        </select>
+                        <select id="filter-category" style="padding:0.5rem 0.9rem;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--radius-md);color:var(--text-primary);font-size:0.875rem;">
+                            <option value="">🏷️ Tutte le categorie</option>
+                            <option value="Strategia">Strategia</option>
+                            <option value="Tecnologia">Tecnologia</option>
+                            <option value="Processi">Processi</option>
+                            <option value="Competitor">Competitor</option>
+                            <option value="Cultura">Cultura</option>
+                            <option value="CyberSecurity">CyberSecurity</option>
+                        </select>
+                        <button id="filter-reset" class="btn-secondary" style="padding:0.5rem 0.9rem;font-size:0.875rem;"><i class="fa-solid fa-xmark"></i> Reset</button>
+                        <span id="filter-count" style="font-size:0.8rem;color:var(--text-muted);margin-left:auto;"></span>
                     </div>
                     <!-- Cards Grid -->
                     <div class="insights-grid" id="insights-grid">
@@ -338,7 +375,6 @@
                         <div class="profile-details">
                             <h2 id="profile-name-large">Caricamento...</h2>
                             <span class="profile-role" id="profile-role-large">Consulente</span>
-                            <span id="org-role-badge" style="display:inline-block;margin-top:0.4rem;padding:0.2rem 0.75rem;background:rgba(59,130,246,0.1);color:var(--accent-primary);border-radius:var(--radius-full);font-size:0.75rem;font-weight:600;"></span>
                             <div class="profile-stats">
                                 <div class="stat-box">
                                     <span class="stat-value" id="profile-total-points">150</span>
@@ -394,6 +430,23 @@
                             <!-- Generato via JS -->
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- VISTA: DA VALIDARE -->
+            <div id="view-valida" class="view-section hidden">
+                <header class="topbar">
+                    <div class="greeting">
+                        <h1>Insight da Validare</h1>
+                        <p>Revisiona gli insight del tuo team e pubblicali per renderli visibili a tutti.</p>
+                    </div>
+                </header>
+                <div class="content-wrapper">
+                    <div style="margin-bottom:1.5rem;padding:1rem 1.25rem;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.25);border-radius:var(--radius-md);font-size:0.875rem;color:#F59E0B;">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <strong> Come funziona:</strong> i consulenti inseriscono insight che rimangono in bozza. Come Team Leader puoi validarli per renderli visibili a tutta l'organizzazione. La validazione è una conferma di pertinenza, non un giudizio di qualità.
+                    </div>
+                    <div class="insights-grid" id="draft-insights-grid"></div>
                 </div>
             </div>
 
