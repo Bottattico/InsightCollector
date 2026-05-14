@@ -279,10 +279,20 @@
             const analyticsNav = document.querySelector('[data-target="view-analytics"]');
             if (analyticsNav) analyticsNav.style.display = hasOrgRole('engagement_manager') ? 'flex' : 'none';
 
-            // Social AI — marketing, sales o admin
-            const socialNav = document.querySelector('[data-target="view-marketing"]');
-            if (socialNav) socialNav.style.display =
-                (isStaffRole('marketing') || isStaffRole('sales') || currentUserOrgRole === 'admin') ? 'flex' : 'none';
+            // Content Studio — staff o admin
+            const contentStudioNav = document.querySelector('[data-target="view-content-studio"]');
+            if (contentStudioNav) contentStudioNav.style.display =
+                (isStaff() || currentUserOrgRole === 'admin') ? 'flex' : 'none';
+
+            // Analytics — team_leader+ (non staff)
+            const analyticsNavEl = document.querySelector('[data-target="view-analytics"]');
+            if (analyticsNavEl) analyticsNavEl.style.display =
+                (hasOrgRole('team_leader') && !isStaff()) ? 'flex' : 'none';
+
+            // Export CSV — engagement_manager+
+            const exportBtnEl = document.getElementById('export-btn');
+            if (exportBtnEl) exportBtnEl.style.display =
+                hasOrgRole('engagement_manager') ? 'flex' : 'none';
 
             // Contatore bozze nel badge nav
             const validaBadge = document.getElementById('valida-count-badge');
@@ -493,9 +503,11 @@
                         applyFilters();
                         if(searchInput) searchInput.value = '';
                     }
-                    if(targetId === 'view-valida')     renderDraftInsights();
-                    if(targetId === 'view-classifica') renderLeaderboards();
-                    if(targetId === 'view-profilo') renderProfile();
+                    if(targetId === 'view-valida')          renderDraftInsights();
+                    if(targetId === 'view-classifica')      renderLeaderboards();
+                    if(targetId === 'view-profilo')         renderProfile();
+                    if(targetId === 'view-analytics')       renderAnalytics();
+                    if(targetId === 'view-content-studio')  initContentStudio();
                 }
             });
         });
@@ -605,7 +617,9 @@
                 }
 
                 // Elimina: autore o responsabile+
-                const canDelete  = !isStaff() && (isMyInsight || hasOrgRole('responsabile'));
+                const canDelete  = isMyInsight ||
+                    (!isStaff() && hasOrgRole('team_leader') && myTeamNames.includes(insight.team || '')) ||
+                    hasOrgRole('engagement_manager');
                 const deleteHtml = canDelete
                     ? `<button class="btn-delete-insight" data-id="${insight.id}"
                         style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);
@@ -747,7 +761,9 @@
                 upvoteBtn = `<button class="btn-upvote" id="modal-upvote-btn"><i class="fa-solid fa-check"></i> Utile (${insight.upvotes || 0})</button>`;
             }
 
-            const canDelete = !isStaff() && (isMyInsight || hasOrgRole('responsabile'));
+            const canDelete = isMyInsight ||
+                (!isStaff() && hasOrgRole('team_leader') && myTeamNames.includes(insight.team || '')) ||
+                hasOrgRole('engagement_manager');
             const deleteBtn = canDelete
                 ? `<button id="modal-delete-btn" style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger);padding:0.45rem 1rem;border-radius:var(--radius-full);font-size:0.85rem;display:flex;align-items:center;gap:0.4rem;"><i class="fa-solid fa-trash-can"></i> Elimina</button>`
                 : '';
@@ -1324,8 +1340,8 @@
 
             let toShow = data || [];
 
-            // team_leader: solo bozze del proprio team; responsabile+: tutte
-            if (!hasOrgRole('responsabile') && toShow.length > 0) {
+            // team_leader: solo bozze del proprio team; lead+: tutte
+            if (!hasOrgRole('lead') && toShow.length > 0) {
                 const { data: mem } = await supa.from('team_members').select('team_id').eq('user_email', currentUser);
                 const { data: myT } = await supa.from('teams').select('name').in('id', (mem || []).map(m => m.team_id));
                 const myTeamNames   = (myT || []).map(t => t.name);
@@ -1391,6 +1407,248 @@
             });
         }
 
+        // ── ANALYTICS ────────────────────────────────────────────────────────
+        let _charts = {};
+
+        function renderAnalytics() {
+            const period      = parseInt(document.getElementById('analytics-period')?.value ?? '30');
+            const fullAccess  = hasOrgRole('engagement_manager');
+
+            // Dataset: full o solo team
+            let data = allInsights.filter(i => i.status === 'pubblicato');
+            if (!fullAccess) data = data.filter(i => myTeamNames.includes(i.team || ''));
+            if (period > 0) {
+                const cutoff = new Date();
+                cutoff.setDate(cutoff.getDate() - period);
+                data = data.filter(i => new Date(i.created_at) >= cutoff);
+            }
+
+            // Subtitle
+            const sub = document.getElementById('analytics-subtitle');
+            if (sub) sub.textContent = fullAccess
+                ? 'Panoramica completa degli insight aziendali.'
+                : 'Panoramica degli insight del tuo team.';
+
+            // KPI
+            const totalUp     = data.reduce((s, i) => s + (i.upvotes || 0), 0);
+            const activeAuth  = new Set(data.map(i => i.author_email || i.author).filter(Boolean)).size;
+            const weekAgo     = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+            const thisWeek    = data.filter(i => new Date(i.created_at) >= weekAgo).length;
+            const kpiRow      = document.getElementById('analytics-kpi-row');
+            if (kpiRow) kpiRow.innerHTML = [
+                { icon:'fa-file-circle-check', value: data.length,  label:'Insight pubblicati', color:'var(--accent-primary)' },
+                { icon:'fa-calendar-week',     value: thisWeek,     label:'Questa settimana',   color:'var(--warning)' },
+                { icon:'fa-check-double',      value: totalUp,      label:'Upvote totali',       color:'var(--success)' },
+                { icon:'fa-users',             value: activeAuth,   label:'Autori attivi',       color:'var(--accent-secondary)' },
+            ].map(k => `<div class="analytics-kpi-card">
+                <div class="kpi-icon" style="color:${k.color};background:${k.color}22;"><i class="fa-solid ${k.icon}"></i></div>
+                <div class="kpi-content"><span class="kpi-value">${k.value}</span><span class="kpi-label">${k.label}</span></div>
+            </div>`).join('');
+
+            // Distruggi chart precedenti
+            Object.values(_charts).forEach(c => c?.destroy());
+            _charts = {};
+
+            if (typeof Chart === 'undefined') return;
+
+            const COLORS = ['#3B82F6','#8B5CF6','#10B981','#F59E0B','#EF4444','#06B6D4','#F97316'];
+            const gridColor  = 'rgba(255,255,255,0.06)';
+            const tickColor  = '#64748B';
+            const legendCfg  = { labels: { color:'#94A3B8', font:{ family:'Inter', size:12 }, padding:12 } };
+            const axisDefaults = { ticks:{ color: tickColor }, grid:{ color: gridColor } };
+
+            // 1. Doughnut per categoria
+            const catMap = {};
+            data.forEach(i => { const c = i.category || 'N/A'; catMap[c] = (catMap[c] || 0) + 1; });
+            const catCtx = document.getElementById('chart-category')?.getContext('2d');
+            if (catCtx) _charts.cat = new Chart(catCtx, {
+                type: 'doughnut',
+                data: { labels: Object.keys(catMap), datasets: [{ data: Object.values(catMap), backgroundColor: COLORS, borderWidth: 0 }] },
+                options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ ...legendCfg, position:'right' } } }
+            });
+
+            // 2. Line chart velocity (settimanale)
+            function mondayKey(d) {
+                const dt = new Date(d);
+                dt.setDate(dt.getDate() - (dt.getDay() === 0 ? 6 : dt.getDay() - 1));
+                return dt.toISOString().split('T')[0];
+            }
+            const wMap = {};
+            data.forEach(i => { const k = mondayKey(i.created_at); wMap[k] = (wMap[k] || 0) + 1; });
+            const wSorted = Object.entries(wMap).sort(([a],[b]) => a.localeCompare(b));
+            const velCtx  = document.getElementById('chart-velocity')?.getContext('2d');
+            if (velCtx) _charts.vel = new Chart(velCtx, {
+                type: 'line',
+                data: {
+                    labels: wSorted.map(([k]) => new Date(k).toLocaleDateString('it-IT',{day:'2-digit',month:'short'})),
+                    datasets: [{ label:'Insight', data: wSorted.map(([,v]) => v), borderColor:'#3B82F6', backgroundColor:'rgba(59,130,246,0.1)', tension:0.4, fill:true, pointRadius:4, pointBackgroundColor:'#3B82F6' }]
+                },
+                options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x: axisDefaults, y:{ ...axisDefaults, beginAtZero:true, ticks:{ ...axisDefaults.ticks, stepSize:1 } } } }
+            });
+
+            // 3. Bar orizzontale top clienti
+            const cliMap = {};
+            data.forEach(i => { if(i.client) cliMap[i.client] = (cliMap[i.client]||0)+1; });
+            const cliSorted = Object.entries(cliMap).sort(([,a],[,b])=>b-a).slice(0,7);
+            const cliCtx = document.getElementById('chart-clients')?.getContext('2d');
+            if (cliCtx) _charts.cli = new Chart(cliCtx, {
+                type: 'bar',
+                data: { labels: cliSorted.map(([k])=>k), datasets:[{ data: cliSorted.map(([,v])=>v), backgroundColor:'rgba(139,92,246,0.6)', borderColor:'#8B5CF6', borderWidth:1, borderRadius:6 }] },
+                options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x: axisDefaults, y: axisDefaults } }
+            });
+
+            // 4. Bar team
+            const teamMap = {};
+            data.forEach(i => { if(i.team) teamMap[i.team] = (teamMap[i.team]||0)+1; });
+            const teamCtx = document.getElementById('chart-teams')?.getContext('2d');
+            if (teamCtx) _charts.teams = new Chart(teamCtx, {
+                type: 'bar',
+                data: { labels: Object.keys(teamMap), datasets:[{ data: Object.values(teamMap), backgroundColor:'rgba(16,185,129,0.6)', borderColor:'#10B981', borderWidth:1, borderRadius:6 }] },
+                options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x: axisDefaults, y:{ ...axisDefaults, beginAtZero:true, ticks:{ ...axisDefaults.ticks, stepSize:1 } } } }
+            });
+        }
+
+        // Period filter listener
+        document.getElementById('analytics-period')?.addEventListener('change', () => {
+            if (document.getElementById('view-analytics')?.classList.contains('active')) renderAnalytics();
+        });
+
+        // Export CSV
+        document.getElementById('export-btn')?.addEventListener('click', () => {
+            const period = parseInt(document.getElementById('analytics-period')?.value ?? '0');
+            let data = allInsights.filter(i => i.status === 'pubblicato');
+            if (!hasOrgRole('engagement_manager')) data = data.filter(i => myTeamNames.includes(i.team || ''));
+            if (period > 0) {
+                const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - period);
+                data = data.filter(i => new Date(i.created_at) >= cutoff);
+            }
+            const esc = v => `"${(v||'').toString().replace(/"/g,'""')}"`;
+            const headers = ['Titolo','Cliente','Settore','Categoria','Team','Autore','Upvote','Data','Stato'];
+            const rows    = data.map(i => [
+                esc(i.title), esc(i.client), esc(i.sector), esc(i.category),
+                esc(i.team), esc(i.author_email), i.upvotes||0,
+                new Date(i.created_at).toLocaleDateString('it-IT'), esc(i.status)
+            ]);
+            const csv  = [headers, ...rows].map(r => r.join(',')).join('\n');
+            const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8' });
+            const url  = URL.createObjectURL(blob);
+            const a    = Object.assign(document.createElement('a'), { href: url, download: `bto-insights-${new Date().toISOString().split('T')[0]}.csv` });
+            a.click(); URL.revokeObjectURL(url);
+        });
+
+        // ── CONTENT STUDIO ───────────────────────────────────────────────────
+        let _studioInit = false;
+
+        function initContentStudio() {
+            const listEl = document.getElementById('studio-insight-list');
+            if (!listEl) return;
+
+            // Ricarica sempre la lista (potrebbero esserci nuovi insight)
+            const published = allInsights.filter(i => i.status === 'pubblicato');
+            listEl.innerHTML = published.length === 0
+                ? '<p style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem 0;">Nessun insight pubblicato disponibile.</p>'
+                : published.map(i => `
+                    <label class="studio-insight-item" data-id="${i.id}">
+                        <input type="checkbox" value="${i.id}">
+                        <div>
+                            <span class="studio-insight-title">${i.title || 'Senza titolo'}</span>
+                            <span class="studio-insight-meta">${[i.client, i.category].filter(Boolean).join(' · ') || 'N/A'}</span>
+                        </div>
+                    </label>`).join('');
+
+            // Aggiorna contatore selezione
+            const updateCount = () => {
+                const n = listEl.querySelectorAll('input:checked').length;
+                const el = document.getElementById('studio-selected-count');
+                if (el) el.textContent = `${n} selezionat${n===1?'o':'i'}`;
+                listEl.querySelectorAll('.studio-insight-item').forEach(item => {
+                    item.classList.toggle('selected', item.querySelector('input')?.checked);
+                });
+            };
+            listEl.addEventListener('change', updateCount);
+
+            if (_studioInit) return; // event listeners già registrati
+            _studioInit = true;
+
+            // Filtro ricerca
+            document.getElementById('studio-search')?.addEventListener('input', e => {
+                const q = e.target.value.toLowerCase();
+                document.querySelectorAll('.studio-insight-item').forEach(el => {
+                    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
+            });
+
+            // Toggle tipo contenuto
+            document.getElementById('studio-type-selector')?.addEventListener('click', e => {
+                const btn = e.target.closest('.studio-toggle');
+                if (!btn) return;
+                document.querySelectorAll('#studio-type-selector .studio-toggle').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const platRow = document.getElementById('studio-platform-row');
+                if (platRow) platRow.style.display = btn.dataset.type === 'post' ? 'block' : 'none';
+            });
+
+            // Toggle piattaforma
+            document.getElementById('studio-platform-selector')?.addEventListener('click', e => {
+                const btn = e.target.closest('.studio-toggle');
+                if (!btn) return;
+                document.querySelectorAll('#studio-platform-selector .studio-toggle').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+
+            // Genera
+            document.getElementById('studio-generate-btn')?.addEventListener('click', async () => {
+                const ids = [...document.querySelectorAll('#studio-insight-list input:checked')].map(el => el.value);
+                if (!ids.length) { showToast('Selezione vuota','Seleziona almeno un insight.','fa-triangle-exclamation',false); return; }
+
+                const type     = document.querySelector('#studio-type-selector .studio-toggle.active')?.dataset.type || 'post';
+                const platform = document.querySelector('#studio-platform-selector .studio-toggle.active')?.dataset.platform || 'linkedin';
+                const notes    = document.getElementById('studio-notes')?.value.trim() || '';
+                const genBtn   = document.getElementById('studio-generate-btn');
+
+                genBtn.disabled = true;
+                genBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generazione...';
+
+                try {
+                    const res = await fetch('/api/content-studio', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({ type, platform, insightIds: ids, notes })
+                    });
+                    if (!res.ok) throw new Error('API Error ' + res.status);
+                    const { content } = await res.json();
+
+                    const outEl    = document.getElementById('studio-output');
+                    const outPanel = document.getElementById('studio-output-panel');
+                    const charEl   = document.getElementById('studio-char-count');
+                    if (outEl)    outEl.textContent   = content;
+                    if (outPanel) outPanel.style.display = 'block';
+                    if (charEl)   charEl.textContent  = `${content.length} caratteri`;
+                    outPanel?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+                } catch(e) {
+                    showToast('Errore','Impossibile generare il contenuto. Verifica che l\'app sia su Vercel.','fa-triangle-exclamation',false);
+                } finally {
+                    genBtn.disabled = false;
+                    genBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Genera Contenuto';
+                }
+            });
+
+            // Copia
+            document.getElementById('studio-copy-btn')?.addEventListener('click', () => {
+                const text = document.getElementById('studio-output')?.textContent;
+                if (text) navigator.clipboard.writeText(text).then(() => showToast('Copiato!','Contenuto copiato negli appunti.','fa-check'));
+            });
+
+            // Download .txt
+            document.getElementById('studio-download-btn')?.addEventListener('click', () => {
+                const text = document.getElementById('studio-output')?.textContent;
+                if (!text) return;
+                const blob = new Blob([text], { type:'text/plain;charset=utf-8' });
+                const url  = URL.createObjectURL(blob);
+                Object.assign(document.createElement('a'), { href:url, download:'bto-content.txt' }).click();
+                URL.revokeObjectURL(url);
+            });
+        }
+
         // --- FUNZIONI SUPABASE DATA FETCH ---
         async function loadInsights() {
             try {
@@ -1418,7 +1676,7 @@
                 // Badge nav contatore
                 const validaBadge = document.getElementById('valida-count-badge');
                 if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
-                    const relevantDrafts = hasOrgRole('responsabile')
+                    const relevantDrafts = hasOrgRole('lead')
                         ? draftInsights
                         : draftInsights.filter(i => !i.team || myTeamNames.includes(i.team));
                     validaBadge.textContent = relevantDrafts.length;
