@@ -126,6 +126,49 @@
                 currentUser = null;
                 if(authContainer) authContainer.style.display = 'flex';
                 if(mainApp) mainApp.style.display = 'none';
+
+                // ── Reset UI per il prossimo login ──────────────────────────
+                // 1. Riporta alla view di default
+                document.querySelectorAll('.view-section').forEach(s => {
+                    s.classList.remove('active');
+                    s.classList.add('hidden');
+                    if (s.id === 'view-ai') s.style.display = 'none';
+                });
+                const dvDefault = document.getElementById('view-nuovo-insight');
+                if (dvDefault) { dvDefault.classList.remove('hidden'); dvDefault.classList.add('active'); }
+
+                // 2. Nav active state
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                const navDefault = document.querySelector('[data-target="view-nuovo-insight"]');
+                if (navDefault) navDefault.classList.add('active');
+
+                // 3. Chat history — ripristina solo il messaggio di benvenuto
+                const chatHistEl = document.getElementById('chat-history');
+                if (chatHistEl) chatHistEl.innerHTML = `
+                    <div class="chat-message ai">
+                        <div class="msg-avatar"><i class="fa-solid fa-robot"></i></div>
+                        <div class="msg-content">Ciao. Sono l'AI Senior Consultant di BTO.
+                            Posso aiutarti a trovare casi studio simili, analizzare le problematiche di un cliente o estrarre insight dal nostro database reale. Come posso esserti utile oggi?
+                        </div>
+                    </div>`;
+
+                // 4. Filtri ed input di ricerca
+                const si = document.getElementById('search-input');
+                if (si) si.value = '';
+                ['filter-client','filter-sector','filter-category'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+
+                // 5. Chiudi modale se aperta
+                const modal = document.getElementById('insight-modal');
+                if (modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; }
+
+                // 6. Content Studio — forza re-init al prossimo accesso
+                try { _studioInit = false; } catch(e) {}
+
+                // 7. Distruggi chart analytics
+                try { Object.values(_charts).forEach(c => c?.destroy()); _charts = {}; } catch(e) {}
             }
         }
 
