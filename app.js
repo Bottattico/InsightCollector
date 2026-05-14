@@ -413,10 +413,12 @@
         }
 
         // --- ANNULLA FORM ---
-        document.getElementById('annulla-btn')?.addEventListener('click', () => {
-            form?.reset();
-            const aiText = document.getElementById('ai-raw-text');
-            if (aiText) aiText.value = '';
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('#annulla-btn')) {
+                form?.reset();
+                const aiText = document.getElementById('ai-raw-text');
+                if (aiText) aiText.value = '';
+            }
         });
 
         // --- MAGIC INSERT AI LOGIC ---
