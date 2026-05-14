@@ -303,34 +303,26 @@
                 console.error('Errore caricamento clienti:', e);
             }
 
-            // Carica i team dell'utente dal database
+            // Carica team: tutti se team_leader+, altrimenti solo i propri
             try {
-                if (currentUser) {
-                    const { data: memberships, error: memErr } = await supa
-                        .from('team_members')
-                        .select('team_id')
-                        .eq('user_email', currentUser);
-                    
-                    if (!memErr && memberships && memberships.length > 0) {
-                        const teamIds = memberships.map(m => m.team_id);
-                        const { data: teams, error: teamErr } = await supa
-                            .from('teams')
-                            .select('name')
-                            .in('id', teamIds);
-                        
-                        if (!teamErr && teams) {
-                            userTeams = teams.map(t => t.name);
-                        }
+                let teamsToShow = [];
+                if (hasOrgRole('team_leader')) {
+                    // Ruoli elevati: tutti i team dal DB
+                    const { data: allDbTeams, error } = await supa.from('teams').select('name').order('name');
+                    if (!error && allDbTeams) teamsToShow = allDbTeams.map(t => t.name);
+                } else if (currentUser) {
+                    // Consulente: solo i propri team
+                    const { data: memberships } = await supa
+                        .from('team_members').select('team_id').eq('user_email', currentUser);
+                    if (memberships && memberships.length > 0) {
+                        const { data: myTeams } = await supa
+                            .from('teams').select('name').in('id', memberships.map(m => m.team_id)).order('name');
+                        if (myTeams) teamsToShow = myTeams.map(t => t.name);
                     }
                 }
-                // Mostra i team dell'utente; fallback: tutti i team dal DB
-                if (userTeams.length > 0) {
-                    if(teamListDOM) teamListDOM.innerHTML = userTeams.map(t => `<option value="${t}"></option>`).join('');
-                } else {
-                    const { data: allDbTeams } = await supa.from('teams').select('name').order('name');
-                    const teamsToShow = (allDbTeams && allDbTeams.length > 0) ? allDbTeams.map(t => t.name) : mockTeams;
-                    if(teamListDOM) teamListDOM.innerHTML = teamsToShow.map(t => `<option value="${t}"></option>`).join('');
-                }
+                userTeams = teamsToShow;
+                if(teamListDOM) teamListDOM.innerHTML = (teamsToShow.length > 0 ? teamsToShow : mockTeams)
+                    .map(t => `<option value="${t}"></option>`).join('');
             } catch(e) {
                 console.error('Errore caricamento team:', e);
                 if(teamListDOM) teamListDOM.innerHTML = mockTeams.map(t => `<option value="${t}"></option>`).join('');
