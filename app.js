@@ -412,6 +412,13 @@
             }
         }
 
+        // --- ANNULLA FORM ---
+        document.getElementById('annulla-btn')?.addEventListener('click', () => {
+            form?.reset();
+            const aiText = document.getElementById('ai-raw-text');
+            if (aiText) aiText.value = '';
+        });
+
         // --- MAGIC INSERT AI LOGIC ---
         const aiParseBtn = document.getElementById('ai-parse-btn');
         const aiRawText = document.getElementById('ai-raw-text');
