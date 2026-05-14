@@ -1078,12 +1078,47 @@
                     }
 
                     const data = await response.json();
-                    
                     document.getElementById(typingId).remove();
-                    
-                    // Converte Markdown a HTML basico se necessario, oppure Groq risponde già formattato bene
-                    const formattedAnswer = data.answer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                    appendChatMessage('ai', formattedAnswer);
+
+                    const citations = data.citations || [];
+                    // Mappa indice → citation
+                    const citationMap = {};
+                    citations.forEach(c => { citationMap[c.index] = c; });
+
+                    // Formatta risposta: markdown base + [#N] → chip cliccabili
+                    let formattedAnswer = (data.answer || '')
+                        .replace(/\n/g, '<br>')
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\[#(\d+)\]/g, (match, n) => {
+                            const c = citationMap[parseInt(n)];
+                            return c
+                                ? `<button class="chat-insight-chip" data-insight-id="${c.id}">[#${n}]</button>`
+                                : match;
+                        });
+
+                    // Blocco citazioni in fondo al messaggio
+                    if (citations.length > 0) {
+                        formattedAnswer += `<div class="chat-citations">
+                            <span class="chat-citations-label"><i class="fa-solid fa-link"></i> Insight citati</span>
+                            ${citations.map(c => `
+                                <button class="chat-cite-card" data-insight-id="${c.id}">
+                                    <span class="cite-num">#${c.index}</span>
+                                    <span class="cite-title">${c.title || 'Insight'}</span>
+                                    <span class="cite-meta">${[c.client, c.category].filter(Boolean).join(' · ')}</span>
+                                </button>`).join('')}
+                        </div>`;
+                    }
+
+                    const msgEl = appendChatMessage('ai', formattedAnswer);
+
+                    // Click su chip/card → apre la modale dell'insight
+                    msgEl.querySelectorAll('[data-insight-id]').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const id = btn.getAttribute('data-insight-id');
+                            const insight = allInsights.find(i => i.id === id);
+                            if (insight) openInsightModal(insight);
+                        });
+                    });
                     
                 } catch (error) {
                     console.error("AI Error:", error);
@@ -1104,6 +1139,7 @@
                 <div class="msg-content">${htmlContent}</div>
             `;
             chatHistory.appendChild(div);
+            return div;
         }
 
         function appendTypingIndicator() {

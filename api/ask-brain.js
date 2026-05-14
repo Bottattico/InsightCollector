@@ -14,52 +14,68 @@ export default async function handler(req, res) {
   try {
     const { prompt } = req.body;
 
-    // Recupera tutti gli insight pubblici e riservati (i segreti non vanno nell'AI)
+    // Recupera tutti gli insight pubblicati (status = 'pubblicato')
     const { data: insights, error } = await supabase
       .from('insights')
-      .select('client, category, snippet, confidentiality')
-      .in('confidentiality', ['pubblico', 'riservato'])
+      .select('id, title, client, sector, category, team, snippet')
+      .eq('status', 'pubblicato')
       .order('created_at', { ascending: false });
 
     if (error) console.error('Supabase Error:', error);
 
-    let contextString = "Nessun insight presente nel database attualmente.";
-    if (insights && insights.length > 0) {
-      contextString = insights.map((i, idx) => {
-        // Anonimizza sempre il cliente nell'AI, indipendentemente dalla confidenzialità
-        // (il nome cliente non deve mai uscire dal contesto aziendale via AI)
-        const clientLabel = i.confidentiality === 'pubblico'
-          ? (i.client || 'un cliente')
-          : `un cliente nel settore ${i.category || 'non specificato'}`;
-        return `Insight ${idx + 1}: Cliente: ${clientLabel}, Categoria: ${i.category || 'N/A'}. Contenuto: ${i.snippet}`;
-      }).join('\n');
-    }
+    const insightList = insights || [];
 
-    const systemMessage = `Sei l'Intelligenza Artificiale ufficiale di BTO. Il tuo compito ESCLUSIVO è rispondere alle domande degli utenti basandoti UNICAMENTE sulle informazioni contenute nei seguenti insight aziendali interni.
+    const contextString = insightList.length > 0
+      ? insightList.map((i, idx) =>
+          `[#${idx + 1}] Titolo: "${i.title}" | Cliente: ${i.client || 'N/A'} | Settore: ${i.sector || 'N/A'} | Categoria: ${i.category || 'N/A'} | Team: ${i.team || 'N/A'}\nContenuto: ${i.snippet}`
+        ).join('\n\n')
+      : 'Nessun insight pubblicato nel database.';
 
-Insight disponibili:
+    const systemMessage = `Sei il Senior AI Consultant di BTO, una società di consulenza manageriale e tecnologica italiana. \
+Supporti i consulenti BTO con analisi, ragionamento strategico e conoscenza su temi di business, digital transformation e tecnologia.
+
+Hai accesso al database interno degli insight raccolti dai consulenti BTO sul campo:
 ${contextString}
 
-REGOLE FONDAMENTALI:
-1. Rispondi SOLO usando le informazioni degli insight forniti sopra.
-2. NON usare mai conoscenza esterna o generica.
-3. I nomi dei clienti sono già stati anonimizzati dove necessario. Non dedurre né rivelare nomi reali.
-4. Se la risposta non è deducibile dagli insight: "Mi dispiace, ma non ci sono informazioni a riguardo negli insight aziendali."
-5. Rifiuta domande non inerenti a consulenza, BTO o agli insight forniti.
-Struttura la risposta in paragrafi brevi, usa **grassetto** per le parole chiave.`;
+COMPORTAMENTO:
+- Quando la domanda è coperta dagli insight interni, citali esplicitamente usando [#N] (es. [#1], [#3]) e basati sul loro contenuto per rispondere.
+- Puoi — anzi devi — integrare la risposta con conoscenza generale di management consulting, strategia, tecnologia, change management, AI, ERP, CRM, cybersecurity, operations, finance, HR e marketing B2B per dare risposte più ricche e contestualizzate.
+- Rimani sempre focalizzato su temi aziendali e professionali. Se la domanda è completamente estranea al business (es. ricette, sport, politica), declinala gentilmente.
+- Quando citi un insight interno usa SEMPRE il formato [#N].
+- Non inventare dati interni non presenti negli insight forniti.
+- Rispondi in italiano, in modo professionale e diretto. Usa **grassetto** per i concetti chiave.
+- Struttura la risposta con paragrafi brevi e leggibili.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: 'system', content: systemMessage },
         { role: 'user', content: prompt }
       ],
-      model: 'llama-3.1-8b-instant',
-      temperature: 0.5,
-      max_tokens: 1024,
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.6,
+      max_tokens: 1500,
     });
 
-    const answer = chatCompletion.choices[0]?.message?.content || "Scusa, non sono riuscito a generare una risposta.";
-    return res.status(200).json({ answer });
+    const answer = chatCompletion.choices[0]?.message?.content
+      || 'Scusa, non sono riuscito a generare una risposta.';
+
+    // Estrai gli indici degli insight citati nella risposta
+    const citedIndices = [...new Set(
+      [...answer.matchAll(/\[#(\d+)\]/g)].map(m => parseInt(m[1]) - 1)
+    )];
+
+    const citations = citedIndices
+      .filter(i => i >= 0 && i < insightList.length)
+      .map(i => ({
+        index: i + 1,
+        id:       insightList[i].id,
+        title:    insightList[i].title,
+        client:   insightList[i].client,
+        category: insightList[i].category,
+        team:     insightList[i].team,
+      }));
+
+    return res.status(200).json({ answer, citations });
 
   } catch (err) {
     console.error('API Error:', err);
