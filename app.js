@@ -253,12 +253,13 @@
         // --- STATO ---
         let allInsights = [];
         let draftInsights = [];
-        
+
         // Categorie e team base (in produzione verrebbero anche questi dal DB)
         let mockCategories = ["Strategia", "Tecnologia", "Processi", "Competitor", "Cultura", "CyberSecurity"];
         let mockTeams = ["Team AI Transformation", "Team Cloud Journey", "Team Agile Governance", "Team CyberSecurity"];
         let dbClients = [];
         let userTeams = [];
+        let myTeamNames = []; // team di cui l'utente è effettivamente membro (usato per filtrare il badge)
 
         // ─── NAVIGAZIONE PER RUOLO ───────────────────────────────────────────
         function updateNavByRole() {
@@ -286,8 +287,11 @@
             // Contatore bozze nel badge nav
             const validaBadge = document.getElementById('valida-count-badge');
             if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
-                validaBadge.textContent = draftInsights.length;
-                validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
+                const relevantDrafts = hasOrgRole('responsabile')
+                    ? draftInsights
+                    : draftInsights.filter(i => !i.team || myTeamNames.includes(i.team));
+                validaBadge.textContent = relevantDrafts.length;
+                validaBadge.style.display = relevantDrafts.length > 0 ? 'inline-flex' : 'none';
             }
         }
 
@@ -307,20 +311,25 @@
 
             // Carica team: tutti se team_leader+, altrimenti solo i propri
             try {
-                let teamsToShow = [];
-                if (hasOrgRole('team_leader')) {
-                    // Ruoli elevati: tutti i team dal DB
-                    const { data: allDbTeams, error } = await supa.from('teams').select('name').order('name');
-                    if (!error && allDbTeams) teamsToShow = allDbTeams.map(t => t.name);
-                } else if (currentUser) {
-                    // Consulente: solo i propri team
+                // Carica sempre i team reali dell'utente (per badge validazione)
+                if (currentUser) {
                     const { data: memberships } = await supa
                         .from('team_members').select('team_id').eq('user_email', currentUser);
                     if (memberships && memberships.length > 0) {
-                        const { data: myTeams } = await supa
-                            .from('teams').select('name').in('id', memberships.map(m => m.team_id)).order('name');
-                        if (myTeams) teamsToShow = myTeams.map(t => t.name);
+                        const { data: ownTeams } = await supa
+                            .from('teams').select('name').in('id', memberships.map(m => m.team_id));
+                        myTeamNames = (ownTeams || []).map(t => t.name);
                     }
+                }
+
+                let teamsToShow = [];
+                if (hasOrgRole('team_leader')) {
+                    // Ruoli elevati: tutti i team nella datalist
+                    const { data: allDbTeams, error } = await supa.from('teams').select('name').order('name');
+                    if (!error && allDbTeams) teamsToShow = allDbTeams.map(t => t.name);
+                } else {
+                    // Consulente: solo i propri team nella datalist
+                    teamsToShow = myTeamNames;
                 }
                 userTeams = teamsToShow;
                 if(teamListDOM) teamListDOM.innerHTML = (teamsToShow.length > 0 ? teamsToShow : mockTeams)
@@ -1330,8 +1339,11 @@
                 // Badge nav contatore
                 const validaBadge = document.getElementById('valida-count-badge');
                 if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
-                    validaBadge.textContent = draftInsights.length;
-                    validaBadge.style.display = draftInsights.length > 0 ? 'inline-flex' : 'none';
+                    const relevantDrafts = hasOrgRole('responsabile')
+                        ? draftInsights
+                        : draftInsights.filter(i => !i.team || myTeamNames.includes(i.team));
+                    validaBadge.textContent = relevantDrafts.length;
+                    validaBadge.style.display = relevantDrafts.length > 0 ? 'inline-flex' : 'none';
                 }
 
                 populateClientFilter();
