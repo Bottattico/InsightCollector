@@ -1622,7 +1622,18 @@
             if (_studioInit) return; // event listeners già registrati
             _studioInit = true;
 
-            // Filtro ricerca
+            // Toggle sorgente: Da Insight ↔ Da Testo
+            document.getElementById('studio-source-selector')?.addEventListener('click', e => {
+                const btn = e.target.closest('.studio-toggle');
+                if (!btn) return;
+                document.querySelectorAll('#studio-source-selector .studio-toggle').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const isText = btn.dataset.source === 'text';
+                document.getElementById('studio-source-insights').style.display = isText ? 'none' : 'block';
+                document.getElementById('studio-source-text').style.display     = isText ? 'block' : 'none';
+            });
+
+            // Filtro ricerca insight
             document.getElementById('studio-search')?.addEventListener('input', e => {
                 const q = e.target.value.toLowerCase();
                 document.querySelectorAll('.studio-insight-item').forEach(el => {
@@ -1650,13 +1661,22 @@
 
             // Genera
             document.getElementById('studio-generate-btn')?.addEventListener('click', async () => {
-                const ids = [...document.querySelectorAll('#studio-insight-list input:checked')].map(el => el.value);
-                if (!ids.length) { showToast('Selezione vuota','Seleziona almeno un insight.','fa-triangle-exclamation',false); return; }
+                const sourceMode = document.querySelector('#studio-source-selector .studio-toggle.active')?.dataset.source || 'insights';
+                const type       = document.querySelector('#studio-type-selector .studio-toggle.active')?.dataset.type || 'post';
+                const platform   = document.querySelector('#studio-platform-selector .studio-toggle.active')?.dataset.platform || 'linkedin';
+                const notes      = document.getElementById('studio-notes')?.value.trim() || '';
+                const genBtn     = document.getElementById('studio-generate-btn');
 
-                const type     = document.querySelector('#studio-type-selector .studio-toggle.active')?.dataset.type || 'post';
-                const platform = document.querySelector('#studio-platform-selector .studio-toggle.active')?.dataset.platform || 'linkedin';
-                const notes    = document.getElementById('studio-notes')?.value.trim() || '';
-                const genBtn   = document.getElementById('studio-generate-btn');
+                let payload;
+                if (sourceMode === 'text') {
+                    const freeText = document.getElementById('studio-free-text')?.value.trim() || '';
+                    if (!freeText) { showToast('Testo mancante','Inserisci un testo di partenza.','fa-triangle-exclamation',false); return; }
+                    payload = { type, platform, freeText, notes };
+                } else {
+                    const ids = [...document.querySelectorAll('#studio-insight-list input:checked')].map(el => el.value);
+                    if (!ids.length) { showToast('Selezione vuota','Seleziona almeno un insight.','fa-triangle-exclamation',false); return; }
+                    payload = { type, platform, insightIds: ids, notes };
+                }
 
                 genBtn.disabled = true;
                 genBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generazione...';
@@ -1664,7 +1684,7 @@
                 try {
                     const res = await fetch('/api/content-studio', {
                         method:'POST', headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({ type, platform, insightIds: ids, notes })
+                        body: JSON.stringify(payload)
                     });
                     if (!res.ok) throw new Error('API Error ' + res.status);
                     const { content } = await res.json();
@@ -1672,9 +1692,9 @@
                     const outEl    = document.getElementById('studio-output');
                     const outPanel = document.getElementById('studio-output-panel');
                     const charEl   = document.getElementById('studio-char-count');
-                    if (outEl)    outEl.textContent   = content;
+                    if (outEl)    outEl.textContent  = content;
                     if (outPanel) outPanel.style.display = 'block';
-                    if (charEl)   charEl.textContent  = `${content.length} caratteri`;
+                    if (charEl)   charEl.textContent = `${content.length} caratteri`;
                     outPanel?.scrollIntoView({ behavior:'smooth', block:'nearest' });
                 } catch(e) {
                     showToast('Errore','Impossibile generare il contenuto. Verifica che l\'app sia su Vercel.','fa-triangle-exclamation',false);

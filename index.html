@@ -448,14 +448,37 @@
                 </header>
                 <div class="content-wrapper" style="max-width:1300px;">
                     <div class="studio-layout">
-                        <!-- Pannello selezione insight -->
+                        <!-- Pannello sorgente -->
                         <div class="studio-panel">
                             <div class="studio-panel-header">
-                                <h3><i class="fa-solid fa-list-check"></i> Seleziona Insight</h3>
-                                <span id="studio-selected-count" style="font-size:0.82rem;color:var(--accent-primary);font-weight:600;">0 selezionati</span>
+                                <h3><i class="fa-solid fa-layer-group"></i> Sorgente</h3>
                             </div>
-                            <input type="text" id="studio-search" placeholder="Filtra insight..." style="margin-bottom:1rem;width:100%;">
-                            <div id="studio-insight-list" class="studio-insight-list"></div>
+
+                            <!-- Selettore modalità -->
+                            <div class="studio-btn-group" id="studio-source-selector" style="margin-bottom:1.25rem;">
+                                <button class="studio-toggle active" data-source="insights" style="flex:1;justify-content:center;">
+                                    <i class="fa-solid fa-list-check"></i> Da Insight
+                                </button>
+                                <button class="studio-toggle" data-source="text" style="flex:1;justify-content:center;">
+                                    <i class="fa-solid fa-pen-to-square"></i> Da Testo
+                                </button>
+                            </div>
+
+                            <!-- Pannello: selezione insight -->
+                            <div id="studio-source-insights">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                                    <span id="studio-selected-count" style="font-size:0.82rem;color:var(--accent-primary);font-weight:600;">0 selezionati</span>
+                                </div>
+                                <input type="text" id="studio-search" placeholder="Filtra insight..." style="margin-bottom:1rem;width:100%;">
+                                <div id="studio-insight-list" class="studio-insight-list"></div>
+                            </div>
+
+                            <!-- Pannello: testo libero -->
+                            <div id="studio-source-text" style="display:none;">
+                                <label class="studio-label">Testo di partenza</label>
+                                <textarea id="studio-free-text" rows="9" placeholder="Incolla o scrivi il testo da cui vuoi generare il contenuto. Es: note di una riunione, appunti di campo, un articolo..."></textarea>
+                                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.5rem;"><i class="fa-solid fa-circle-info"></i> L'AI elaborerà questo testo per creare il formato selezionato.</p>
+                            </div>
                         </div>
 
                         <!-- Pannello config + output -->

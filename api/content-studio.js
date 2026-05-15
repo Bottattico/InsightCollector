@@ -17,21 +17,31 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
   try {
-    const { type, platform, insightIds, notes } = req.body;
+    const { type, platform, insightIds, freeText, notes } = req.body;
 
-    if (!insightIds?.length) return res.status(400).json({ message: 'Nessun insight selezionato.' });
+    if (!insightIds?.length && !freeText?.trim()) {
+      return res.status(400).json({ message: 'Nessuna sorgente fornita (insight o testo).' });
+    }
 
-    const { data: insights, error } = await supabase
-      .from('insights')
-      .select('title, client, sector, category, team, snippet')
-      .eq('status', 'pubblicato')
-      .in('id', insightIds);
+    let context;
 
-    if (error || !insights?.length) return res.status(400).json({ message: 'Insight non trovati.' });
+    if (freeText?.trim()) {
+      // Modalità testo libero: usa direttamente il testo dell'utente
+      context = `Testo fornito dall'utente:\n${freeText.trim()}`;
+    } else {
+      // Modalità insight: recupera dal DB
+      const { data: insights, error } = await supabase
+        .from('insights')
+        .select('title, client, sector, category, team, snippet')
+        .eq('status', 'pubblicato')
+        .in('id', insightIds);
 
-    const context = insights.map((i, idx) =>
-      `[${idx + 1}] Titolo: "${i.title}" | Cliente: ${i.client || 'N/A'} | Settore: ${i.sector || 'N/A'} | Categoria: ${i.category || 'N/A'} | Team: ${i.team || 'N/A'}\nContenuto: ${i.snippet}`
-    ).join('\n\n');
+      if (error || !insights?.length) return res.status(400).json({ message: 'Insight non trovati.' });
+
+      context = insights.map((i, idx) =>
+        `[${idx + 1}] Titolo: "${i.title}" | Cliente: ${i.client || 'N/A'} | Settore: ${i.sector || 'N/A'} | Categoria: ${i.category || 'N/A'} | Team: ${i.team || 'N/A'}\nContenuto: ${i.snippet}`
+      ).join('\n\n');
+    }
 
     let systemPrompt, userPrompt;
 
