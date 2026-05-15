@@ -1631,6 +1631,9 @@
                 const isText = btn.dataset.source === 'text';
                 document.getElementById('studio-source-insights').style.display = isText ? 'none' : 'block';
                 document.getElementById('studio-source-text').style.display     = isText ? 'block' : 'none';
+                // In modalità testo le note sono ridondanti
+                const notesRow = document.getElementById('studio-notes-row');
+                if (notesRow) notesRow.style.display = isText ? 'none' : 'block';
             });
 
             // Filtro ricerca insight

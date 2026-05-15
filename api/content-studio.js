@@ -24,12 +24,28 @@ export default async function handler(req, res) {
     }
 
     let context;
+    let userDirective = null; // istruzione aggiuntiva dell'utente in modalità testo
 
     if (freeText?.trim()) {
-      // Modalità testo libero: usa direttamente il testo dell'utente
-      context = `Testo fornito dall'utente:\n${freeText.trim()}`;
+      // Modalità testo libero: carica TUTTI gli insight pubblicati come contesto,
+      // e usa il testo dell'utente come direttiva/domanda
+      const { data: allInsights, error } = await supabase
+        .from('insights')
+        .select('title, client, sector, category, team, snippet')
+        .eq('status', 'pubblicato')
+        .order('created_at', { ascending: false });
+
+      if (error || !allInsights?.length) {
+        return res.status(400).json({ message: 'Nessun insight pubblicato nel database.' });
+      }
+
+      context = allInsights.map((i, idx) =>
+        `[${idx + 1}] Titolo: "${i.title}" | Cliente: ${i.client || 'N/A'} | Settore: ${i.sector || 'N/A'} | Categoria: ${i.category || 'N/A'} | Team: ${i.team || 'N/A'}\nContenuto: ${i.snippet}`
+      ).join('\n\n');
+
+      userDirective = freeText.trim();
     } else {
-      // Modalità insight: recupera dal DB
+      // Modalità insight selezionati: recupera solo gli insight scelti
       const { data: insights, error } = await supabase
         .from('insights')
         .select('title, client, sector, category, team, snippet')
@@ -53,6 +69,11 @@ REGOLE ASSOLUTE — NON DEROGABILI:
 
     let systemPrompt, userPrompt;
 
+    // Suffisso istruzione utente (modalità testo libero)
+    const directiveSuffix = userDirective
+      ? `\n\nIstruzione specifica dell'utente: "${userDirective}"`
+      : '';
+
     if (type === 'post') {
       const pl = PLATFORM_CFG[platform] || PLATFORM_CFG.linkedin;
       systemPrompt = `Sei il responsabile comunicazione di BTO, società di consulenza manageriale e tecnologica italiana.
@@ -60,7 +81,7 @@ Scrivi post ${platform.charAt(0).toUpperCase() + platform.slice(1)} in stile ${p
 Rispetta il limite di ${pl.chars} caratteri totali.
 Usa i nomi reali dei clienti esattamente come compaiono nel contesto.
 ${antiHallucination}`;
-      userPrompt = `Crea un post ${platform} basato esclusivamente su questo contesto BTO:\n\n${context}${notes ? '\n\nNote aggiuntive: ' + notes : ''}`;
+      userPrompt = `DATABASE INSIGHT BTO:\n\n${context}\n\nCrea un post ${platform} basato esclusivamente sugli insight sopra.${directiveSuffix}${notes ? '\n\nNote aggiuntive: ' + notes : ''}`;
 
     } else { // report
       systemPrompt = `Sei un senior consultant di BTO. Redigi report sintetici e professionali in italiano.
@@ -68,7 +89,7 @@ Struttura: Executive Summary · Principali Evidenze · Implicazioni Strategiche 
 Usa i nomi reali dei clienti esattamente come compaiono nel contesto.
 Usa **grassetto** per i concetti chiave, linguaggio diretto e orientato all'azione.
 ${antiHallucination}`;
-      userPrompt = `Genera un report di sintesi basato esclusivamente su questo contesto:\n\n${context}${notes ? '\n\nFocus richiesto: ' + notes : ''}`;
+      userPrompt = `DATABASE INSIGHT BTO:\n\n${context}\n\nGenera un report di sintesi basato esclusivamente sugli insight sopra.${directiveSuffix}${notes ? '\n\nFocus richiesto: ' + notes : ''}`;
     }
 
     const completion = await groq.chat.completions.create({
