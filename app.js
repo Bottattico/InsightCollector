@@ -1,11 +1,14 @@
+// ─── ENTRY POINT ─────────────────────────────────────────────────────────────
+// Tutta la logica applicativa e' racchiusa in un IIFE asincrono per evitare
+// inquinamento del namespace globale. La funzione attende la sessione Supabase
+// prima di renderizzare qualsiasi vista.
 (async function initApp() {
-    console.log("SYSTEM: Initializing with Supabase & Groq");
 
     try {
-        // --- INIZIALIZZA SUPABASE ---
+        // Inizializzazione del client Supabase con le chiavi pubbliche iniettate dall'HTML.
         const supa = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
-        // --- AUTHENTICATION LOGIC ---
+        // ─── AUTENTICAZIONE ───────────────────────────────────────────────────
         let isLoginMode = true;
         const authContainer = document.getElementById('auth-container');
         const mainApp = document.getElementById('main-app');
@@ -20,7 +23,11 @@
 
         let currentUser = null;
 
-        // ─── ROLE SYSTEM ─────────────────────────────────────────────────────
+        // ─── SISTEMA RUOLI ────────────────────────────────────────────────────
+        // I ruoli organizzativi sono ordinati numericamente in ORG_ROLE_LEVEL.
+        // hasOrgRole(minRole) restituisce true se il ruolo corrente e' >= alla soglia.
+        // I ruoli STAFF (marketing, sales, hr, operations) hanno accesso limitato:
+        // vedono il Content Studio ma non Valida, Analytics o gestione team.
         let currentUserOrgRole = 'consulente';
         const ORG_ROLE_LEVEL = {
             consulente: 0, team_leader: 1, engagement_manager: 2,
@@ -46,36 +53,38 @@
         }
 
 
+        // Gestisce la transizione tra stato autenticato e non autenticato.
+        // Al login: aggiorna UI, carica ruolo dal DB, inizializza dati.
+        // Al logout: resetta tutte le viste e lo stato locale.
         async function updateAuthState(session) {
             if (session) {
                 currentUser = session.user.email;
                 if(authContainer) authContainer.style.display = 'none';
                 if(mainApp) mainApp.style.display = 'flex';
-                
-                // Update UI Profile names (usa nome e cognome se disponibili)
+
+                // Placeholder rapido con metadati di registrazione, in attesa del profilo DB.
                 const meta = session.user.user_metadata || {};
-                const userNameDisplay = (meta.first_name && meta.last_name) 
-                    ? `${meta.first_name} ${meta.last_name}` 
+                const userNameDisplay = (meta.first_name && meta.last_name)
+                    ? `${meta.first_name} ${meta.last_name}`
                     : currentUser.split('@')[0];
                 const sidebarName = document.getElementById('sidebar-name');
                 const profileName = document.getElementById('profile-name-large');
                 if(sidebarName) sidebarName.textContent = userNameDisplay;
                 if(profileName) profileName.textContent = userNameDisplay;
 
-                // Update Role
                 const userRole = session.user.user_metadata?.role || "Consulente";
                 const sidebarRole = document.getElementById('sidebar-role');
                 const profileRole = document.getElementById('profile-role-large');
                 if(sidebarRole) sidebarRole.textContent = userRole;
                 if(profileRole) profileRole.textContent = userRole;
-                
+
                 const avatarUrl = `https://ui-avatars.com/api/?name=${userNameDisplay}&background=3B82F6&color=fff`;
                 const sidebarAv = document.getElementById('sidebar-avatar');
                 const profileAv = document.getElementById('profile-avatar-large');
                 if(sidebarAv) sidebarAv.src = avatarUrl;
                 if(profileAv) profileAv.src = avatarUrl + "&size=120";
 
-                // Load Data — carica profilo, poi dati
+                // Carica il profilo reale dal DB per ottenere org_role e nome verificato.
                 try {
                     const { data: profile } = await supa
                         .from('profiles')
@@ -85,7 +94,7 @@
 
                     if (profile?.org_role) currentUserOrgRole = profile.org_role;
 
-                    // Nome reale dal profilo DB
+                    // Il profilo DB ha precedenza sui metadati di registrazione.
                     const realFirst = profile?.first_name || meta.first_name || '';
                     const realLast  = profile?.last_name  || meta.last_name  || '';
                     const realName  = (realFirst && realLast) ? realFirst + ' ' + realLast
@@ -98,13 +107,11 @@
                     if (sidebarAv2) sidebarAv2.src = av2;
                     if (profileAv2) profileAv2.src = av2 + '&size=120';
 
-                    // Greeting dinamico
                     const hour = new Date().getHours();
                     const saluto = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
                     const greetingEl = document.getElementById('topbar-greeting');
                     if (greetingEl) greetingEl.textContent = saluto + ', ' + (realFirst || realName);
 
-                    // Badge ruolo
                     const orgBadge = document.getElementById('org-role-badge');
                     if (orgBadge) orgBadge.textContent = ROLE_LABELS[currentUserOrgRole] || currentUserOrgRole;
                     const sidebarRoleEl = document.getElementById('sidebar-role');
@@ -128,8 +135,8 @@
                 if(authContainer) authContainer.style.display = 'flex';
                 if(mainApp) mainApp.style.display = 'none';
 
-                // ── Reset UI per il prossimo login ──────────────────────────
-                // 1. Riporta alla view di default
+                // Reset completo dell'UI per il prossimo accesso: viste, nav,
+                // chat history, filtri, modale e stato dei moduli interni.
                 document.querySelectorAll('.view-section').forEach(s => {
                     s.classList.remove('active');
                     s.classList.add('hidden');
@@ -138,12 +145,10 @@
                 const dvDefault = document.getElementById('view-nuovo-insight');
                 if (dvDefault) { dvDefault.classList.remove('hidden'); dvDefault.classList.add('active'); }
 
-                // 2. Nav active state
                 document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
                 const navDefault = document.querySelector('[data-target="view-nuovo-insight"]');
                 if (navDefault) navDefault.classList.add('active');
 
-                // 3. Chat history — ripristina solo il messaggio di benvenuto
                 const chatHistEl = document.getElementById('chat-history');
                 if (chatHistEl) chatHistEl.innerHTML = `
                     <div class="chat-message ai">
@@ -153,7 +158,6 @@
                         </div>
                     </div>`;
 
-                // 4. Filtri ed input di ricerca
                 const si = document.getElementById('search-input');
                 if (si) si.value = '';
                 ['filter-client','filter-sector','filter-category'].forEach(id => {
@@ -161,19 +165,16 @@
                     if (el) el.value = '';
                 });
 
-                // 5. Chiudi modale se aperta
                 const modal = document.getElementById('insight-modal');
                 if (modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; }
 
-                // 6. Content Studio — forza re-init al prossimo accesso
+                // Forza la re-inizializzazione di Content Studio e Analytics al login successivo.
                 try { _studioInit = false; } catch(e) {}
-
-                // 7. Distruggi chart analytics
                 try { Object.values(_charts).forEach(c => c?.destroy()); _charts = {}; } catch(e) {}
             }
         }
 
-        // Check session on load
+        // Ripristina la sessione esistente al caricamento della pagina.
         const { data: { session } } = await supa.auth.getSession();
         updateAuthState(session);
 
@@ -252,7 +253,8 @@
             });
         }
 
-        // --- ELEMENTI DOM ---
+        // ─── RIFERIMENTI DOM ──────────────────────────────────────────────────
+        // Raccolti una volta sola all'avvio per evitare query ripetute al DOM.
         const form = document.getElementById('insight-form');
         const submitBtn = document.getElementById('submit-btn');
         const toast = document.getElementById('toast');
@@ -283,54 +285,54 @@
         const leaderboardInd = document.getElementById('leaderboard-individuals');
         const leaderboardTeams = document.getElementById('leaderboard-teams');
 
-        // AI Chat DOM
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
         const chatHistory = document.getElementById('chat-history');
 
-        // --- UTENTE CORRENTE ---
-        // (currentUser è ora gestito da Supabase Auth)
+        // ─── STATO APPLICAZIONE ───────────────────────────────────────────────
         let points = 0;
         let weeklyInsights = 0;
         const weeklyGoal = 5;
 
-        // --- STATO ---
+        // allInsights: insight pubblicati + proprie bozze (visibili in Esplora).
+        // draftInsights: bozze altrui disponibili per la validazione.
         let allInsights = [];
         let draftInsights = [];
 
-        // Categorie e team base (in produzione verrebbero anche questi dal DB)
+        // mockCategories/mockTeams: valori di default per le datalist del form.
+        // In produzione i team vengono integrati con quelli reali dal DB.
         let mockCategories = ["Strategia", "Tecnologia", "Processi", "Competitor", "Cultura", "CyberSecurity"];
         let mockTeams = ["Team AI Transformation", "Team Cloud Journey", "Team Agile Governance", "Team CyberSecurity"];
         let dbClients = [];
         let userTeams = [];
-        let myTeamNames = []; // team di cui l'utente è effettivamente membro (usato per filtrare il badge)
+        // Team di cui l'utente e' effettivamente membro; usato per filtrare badge e viste.
+        let myTeamNames = [];
 
-        // ─── NAVIGAZIONE PER RUOLO ───────────────────────────────────────────
+        // ─── VISIBILITA' NAV PER RUOLO ────────────────────────────────────────
+        // Mostra o nasconde le voci di navigazione in base al ruolo dell'utente.
+        // Chiamata dopo ogni aggiornamento di currentUserOrgRole.
         function updateNavByRole() {
-            // Da Validare — team_leader+
             const validaNav = document.querySelector('[data-target="view-valida"]');
             if (validaNav) validaNav.style.display = (hasOrgRole('team_leader') && !isStaff()) ? 'flex' : 'none';
 
-            // Crea Team — team_leader+
             const createTeamBtnEl = document.getElementById('create-team-btn');
             if (createTeamBtnEl) createTeamBtnEl.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
 
-            // Content Studio — staff o admin
+            // Il Content Studio e' riservato ai ruoli staff (marketing, sales...) e admin.
             const contentStudioNav = document.querySelector('[data-target="view-content-studio"]');
             if (contentStudioNav) contentStudioNav.style.display =
                 (isStaff() || currentUserOrgRole === 'admin') ? 'flex' : 'none';
 
-            // Analytics — team_leader+ (non staff)
+            // Analytics visibile ai team_leader non-staff; export CSV richiede engagement_manager.
             const analyticsNavEl = document.querySelector('[data-target="view-analytics"]');
             if (analyticsNavEl) analyticsNavEl.style.display =
                 (hasOrgRole('team_leader') && !isStaff()) ? 'flex' : 'none';
 
-            // Export CSV — engagement_manager+
             const exportBtnEl = document.getElementById('export-btn');
             if (exportBtnEl) exportBtnEl.style.display =
                 hasOrgRole('engagement_manager') ? 'flex' : 'none';
 
-            // Contatore bozze nel badge nav
+            // Il badge mostra il numero di bozze in attesa di validazione per il proprio team.
             const validaBadge = document.getElementById('valida-count-badge');
             if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
                 const relevantDrafts = hasOrgRole('responsabile')
@@ -387,7 +389,9 @@
         }
         populateDatalists();
 
-        // --- UPVOTES PERSISTENTI ---
+        // ─── UPVOTE ───────────────────────────────────────────────────────────
+        // myUpvotedIds e' un Set degli insight_id gia' votati dall'utente corrente.
+        // Viene popolato al login da loadMyUpvotes() per evitare doppi voti.
         let myUpvotedIds = new Set();
 
         async function loadMyUpvotes() {
@@ -405,7 +409,7 @@
             }
         }
 
-        // --- ANNULLA FORM ---
+        // Reset del form nuovo insight via event delegation sul documento.
         document.addEventListener('click', (e) => {
             if (e.target.closest('#annulla-btn')) {
                 form?.reset();
@@ -414,7 +418,9 @@
             }
         });
 
-        // --- MAGIC INSERT AI LOGIC ---
+        // ─── INSERIMENTO ASSISTITO (AI PARSE) ────────────────────────────────
+        // Invia il testo libero scritto dall'utente all'endpoint /api/parse-insight,
+        // che usa il modello AI per estrarre i campi strutturati del form.
         const aiParseBtn = document.getElementById('ai-parse-btn');
         const aiRawText = document.getElementById('ai-raw-text');
         
@@ -453,7 +459,9 @@
             });
         }
 
-        // --- MICROPHONE LOGIC ---
+        // ─── INPUT VOCALE ─────────────────────────────────────────────────────
+        // Registra audio via MediaRecorder, lo converte in base64 e lo invia
+        // a /api/transcribe (Whisper). La trascrizione viene appesa al textarea.
         const micBtn = document.getElementById('ai-mic-btn');
         let mediaRecorder = null;
         let audioChunks = [];
@@ -521,7 +529,9 @@
             });
         }
 
-        // --- SPA NAVIGATION ---
+        // ─── NAVIGAZIONE SPA ──────────────────────────────────────────────────
+        // Gestisce il routing client-side: mostra/nasconde view-section e
+        // carica i dati necessari quando si accede a una specifica sezione.
         navItems.forEach(item => {
             item.addEventListener('click', async (e) => {
                 if(item.tagName === 'A') e.preventDefault();
@@ -557,7 +567,10 @@
             });
         });
 
-        // --- FORM LOGIC (Insert in Supabase) ---
+        // ─── INVIO INSIGHT ────────────────────────────────────────────────────
+        // Salva il nuovo insight come 'bozza'. Diventa visibile a tutta
+        // l'organizzazione solo dopo la validazione di un Team Leader.
+        // Se il cliente e' nuovo viene aggiunto anche alla tabella clients.
         if(form) {
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -619,7 +632,11 @@
             });
         }
 
-        // --- CARD RENDERER (Con Anonimato) ---
+        // ─── RENDER CARD INSIGHT ──────────────────────────────────────────────
+        // Genera le card nel container specificato. Ogni card mostra badge, titolo,
+        // snippet, autore e i pulsanti di upvote/elimina in base ai permessi.
+        // La visibilita' del tasto elimina dipende da: autore, team leader del team,
+        // o ruolo engagement_manager+.
         function renderInsights(insights, container, forceAnonymous = false) {
             if(!container) return;
             container.innerHTML = '';
@@ -633,17 +650,14 @@
                 const card = document.createElement('div');
                 card.className = 'insight-card';
                 
-                // Formatta Data
                 const dateObj = new Date(insight.created_at);
                 const dateStr = isNaN(dateObj) ? "Data sconosciuta" : dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 
-                // Autore e avatar
                 const rawAuthor     = insight.author_email || insight.author || 'Utente Sconosciuto';
                 const displayAuthor = rawAuthor;
                 const avatarUrl     = `https://ui-avatars.com/api/?name=${encodeURIComponent(rawAuthor)}&background=1E293B&color=fff`;
                 const displayClient = insight.client || 'N/A';
 
-                // Badge bozza
                 const isBozza    = insight.status === 'bozza';
                 const bozzaBadge = isBozza
                     ? `<span class="badge" style="background:rgba(245,158,11,0.1);color:#F59E0B;font-size:0.7rem;"><i class="fa-solid fa-clock"></i> Bozza</span>`
@@ -660,7 +674,6 @@
                     upvoteHtml = `<button class="btn-upvote" data-id="${insight.id}"><i class="fa-solid fa-check"></i> Utile <span class="upvote-count">(${insight.upvotes || 0})</span></button>`;
                 }
 
-                // Elimina: autore o responsabile+
                 const canDelete  = isMyInsight ||
                     (!isStaff() && hasOrgRole('team_leader') && myTeamNames.includes(insight.team || '')) ||
                     hasOrgRole('engagement_manager');
@@ -701,7 +714,8 @@
                 container.appendChild(card);
             });
 
-            // Gestione UPVOTE (Update in Supabase)
+            // Upvote: aggiornamento ottimistico del contatore, poi persistenza su DB.
+            // Un secondo upvote sullo stesso insight e' impedito da myUpvotedIds e dal DB.
             container.querySelectorAll('.btn-upvote').forEach(btn => {
                 btn.addEventListener('click', async function() {
                     if(this.classList.contains('upvoted')) return;
@@ -712,7 +726,6 @@
 
                     const newUpvotes = (targetInsight.upvotes || 0) + 1;
                     
-                    // Ottimistica
                     this.classList.add('upvoted');
                     const countSpan = this.querySelector('.upvote-count');
                     countSpan.textContent = `(${newUpvotes})`;
@@ -720,10 +733,8 @@
                     
                     targetInsight.upvotes = newUpvotes;
 
-                    // Update Supabase
                     try {
                         await supa.from('insights').update({ upvotes: newUpvotes }).eq('id', id);
-                        // Salva l'upvote in modo persistente
                         await supa.from('user_upvotes').insert([{ user_email: currentUser, insight_id: id }]);
                         myUpvotedIds.add(id);
                         showToast("Feedback Registrato", `Hai validato questa informazione. L'autore riceverà <strong class="highlight">+10 punti</strong>.`, "fa-check-double", true);
@@ -733,7 +744,6 @@
                 });
             });
 
-            // Gestione ELIMINA INSIGHT
             container.querySelectorAll('.btn-delete-insight').forEach(btn => {
                 btn.addEventListener('click', async function() {
                     const id = this.getAttribute('data-id');
@@ -756,7 +766,9 @@
             });
         }
 
-        // --- INSIGHT DETAIL MODAL ---
+        // ─── MODALE DETTAGLIO INSIGHT ─────────────────────────────────────────
+        // Apre un overlay con il testo completo, metadata, upvote e tasto elimina.
+        // Si chiude con il pulsante X, click fuori dall'area o tasto Escape.
         const insightModal    = document.getElementById('insight-modal');
         const modalCloseBtn   = document.getElementById('modal-close-btn');
         const modalBadgesEl   = document.getElementById('modal-badges');
@@ -795,7 +807,6 @@
 
             modalBodyEl.textContent = insight.snippet || '';
 
-            // Footer: upvote + elimina
             let upvoteBtn = '';
             if (isMyInsight) {
                 upvoteBtn = `<span style="font-size:0.85rem;color:var(--text-muted);display:flex;align-items:center;gap:0.4rem;"><i class="fa-solid fa-check"></i> Utile (${insight.upvotes || 0})</span>`;
@@ -817,7 +828,6 @@
             insightModal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
 
-            // Upvote dalla modale
             const modalUpvote = document.getElementById('modal-upvote-btn');
             if (modalUpvote) {
                 modalUpvote.addEventListener('click', async () => {
@@ -826,7 +836,6 @@
                     modalUpvote.innerHTML = `<i class="fa-solid fa-check-double"></i> Già votato (${newUp})`;
                     modalUpvote.classList.add('upvoted');
                     insight.upvotes = newUp;
-                    // Aggiorna anche il meta nella modale
                     modalMetaEl.querySelectorAll('.modal-meta-item')[2].innerHTML = `<i class="fa-solid fa-check-double"></i> ${newUp} utile`;
                     try {
                         await supa.from('insights').update({ upvotes: newUp }).eq('id', insight.id);
@@ -837,7 +846,6 @@
                 });
             }
 
-            // Elimina dalla modale
             const modalDelete = document.getElementById('modal-delete-btn');
             if (modalDelete) {
                 modalDelete.addEventListener('click', async () => {
@@ -888,14 +896,15 @@
             });
         }
 
-        // --- LEADERBOARD & PROFILE ---
+        // ─── CLASSIFICA ───────────────────────────────────────────────────────
+        // Calcola i punteggi a partire dagli insight pubblicati.
+        // Formula: insight * 50 pt + upvote ricevuti * 10 pt.
+        // Il podio individuale mostra i top 3 nell'ordine visivo 2°-1°-3°.
         function renderLeaderboards() {
             if(!leaderboardInd || !leaderboardTeams) return;
 
-            // Solo insight pubblicati contano per le classifiche
             const published = allInsights.filter(i => i.status === 'pubblicato');
 
-            // ── INDIVIDUI: top 3 podio ──────────────────────────────────────
             const userScores = {};
             published.forEach(i => {
                 const author = i.author_email || i.author || 'Anonimo';
@@ -912,7 +921,6 @@
             if (top3.length === 0) {
                 leaderboardInd.innerHTML = '<p style="color:var(--text-muted);padding:1.5rem 0;text-align:center;">Nessun insight pubblicato ancora.</p>';
             } else {
-                // Ordine visivo podio: 2°, 1°, 3°
                 const MEDAL  = ['🥇','🥈','🥉'];
                 const CLASS  = ['podium-gold','podium-silver','podium-bronze'];
                 const visual = top3.length >= 3
@@ -938,7 +946,6 @@
                 </div>`;
             }
 
-            // ── TEAM: score con breakdown dettagliato ───────────────────────
             const teamScores = {};
             published.forEach(i => {
                 const t = i.team || 'Senza Team';
@@ -1000,7 +1007,10 @@
             updateNavByRole(); // gestisce anche il bottone "Crea Team" in base a currentUserOrgRole
         }
 
-        // --- TEAM MANAGEMENT ---
+        // ─── GESTIONE TEAM ────────────────────────────────────────────────────
+        // Carica i team di cui l'utente e' membro (via team_members) e renderizza
+        // le card con l'elenco dei partecipanti. Tre query in cascata:
+        // 1. team_id dell'utente -> 2. dettagli team -> 3. tutti i membri.
         async function loadUserTeams() {
             const teamsGrid = document.getElementById('teams-grid');
             const noTeamsMsg = document.getElementById('no-teams-msg');
@@ -1073,15 +1083,19 @@
             }
         }
 
-        // Gestione creazione team
+        // Crea un nuovo team inserendo il creatore come primo membro e tutti
+        // i membri scelti dal picker. Il campo nome e' obbligatorio.
         const createTeamBtn = document.getElementById('create-team-btn');
         const createTeamForm = document.getElementById('create-team-form');
         const cancelTeamBtn = document.getElementById('cancel-team-btn');
         const saveTeamBtn = document.getElementById('save-team-btn');
 
-        // ── Member Picker ──────────────────────────────────────────
-        let allUsers = []; // cache utenti dal DB
-        let selectedMembers = []; // { email, name, avatar }
+        // ─── MEMBER PICKER ────────────────────────────────────────────────────
+        // Permette di selezionare i membri del team cercandoli per nome o email.
+        // allUsers viene caricato dal DB una sola volta (lazy, con cache).
+        // selectedMembers accumula le selezioni mostrate come chip rimovibili.
+        let allUsers = [];
+        let selectedMembers = [];
         let _memberPickerInit = false;
 
         async function loadAllUsers() {
@@ -1118,6 +1132,7 @@
             });
         }
 
+        // Registra i listener del picker una sola volta (guard _memberPickerInit).
         function initMemberPicker() {
             if (_memberPickerInit) return;
             _memberPickerInit = true;
@@ -1158,7 +1173,6 @@
                 suggestions.style.display = 'block';
             });
 
-            // Chiudi suggerimenti cliccando fuori
             document.addEventListener('click', e => {
                 if (!e.target.closest('.member-picker')) suggestions.style.display = 'none';
             });
@@ -1233,18 +1247,19 @@
             });
         }
 
-        // --- AI ASSISTANT LOGIC (Call Vercel API with Groq) ---
+        // ─── AI ASSISTANT (BRAIN) ─────────────────────────────────────────────
+        // Invia la domanda a /api/ask-brain, che costruisce il contesto dagli
+        // insight pubblicati e usa il modello Groq per rispondere.
+        // Le citazioni [#N] nella risposta diventano chip cliccabili che aprono
+        // la modale dell'insight corrispondente.
         if(chatForm) {
             chatForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const text = chatInput.value.trim();
                 if(!text) return;
 
-                // Messaggio Utente
                 appendChatMessage('user', text);
                 chatInput.value = '';
-
-                // Typing Indicator
                 const typingId = appendTypingIndicator();
                 chatHistory.scrollTop = chatHistory.scrollHeight;
 
@@ -1266,11 +1281,11 @@
                     document.getElementById(typingId).remove();
 
                     const citations = data.citations || [];
-                    // Mappa indice → citation
                     const citationMap = {};
                     citations.forEach(c => { citationMap[c.index] = c; });
 
-                    // Formatta risposta: markdown base + [#N] → chip cliccabili
+                    // Converte markdown base (**grassetto**, newline) e sostituisce
+                    // i riferimenti [#N] con chip cliccabili collegati all'insight.
                     let formattedAnswer = (data.answer || '')
                         .replace(/\n/g, '<br>')
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -1281,7 +1296,6 @@
                                 : match;
                         });
 
-                    // Blocco citazioni in fondo al messaggio
                     if (citations.length > 0) {
                         formattedAnswer += `<div class="chat-citations">
                             <span class="chat-citations-label"><i class="fa-solid fa-link"></i> Insight citati</span>
@@ -1296,7 +1310,6 @@
 
                     const msgEl = appendChatMessage('ai', formattedAnswer);
 
-                    // Click su chip/card → apre la modale dell'insight
                     msgEl.querySelectorAll('[data-insight-id]').forEach(btn => {
                         btn.addEventListener('click', () => {
                             const id = btn.getAttribute('data-insight-id');
@@ -1342,6 +1355,8 @@
             return id;
         }
 
+        // Ricalcola punti e insight settimanali dell'utente corrente e
+        // aggiorna i contatori nella topbar e nella progress bar.
         function computeUserStats() {
             if (!currentUser) return;
             const myInsights = allInsights.filter(i => (i.author_email || i.author) === currentUser);
@@ -1365,6 +1380,7 @@
             updateProgressBar();
         }
 
+        // Aggiorna la progress bar settimanale e il testo motivazionale.
         function updateProgressBar() {
             const percentage = Math.min((weeklyInsights / weeklyGoal) * 100, 100);
             weeklyProgressEl.style.width = `${percentage}%`;
@@ -1379,6 +1395,10 @@
             }
         }
 
+        // ─── UTILITY ──────────────────────────────────────────────────────────
+
+        // Mostra una notifica toast temporanea (4s). success=true → bordo verde,
+        // success=false → bordo accent (errori e avvisi).
         function showToast(title, message, iconClass, success = true) {
             toastTitle.textContent = title;
             toastMessage.innerHTML = message;
@@ -1404,6 +1424,7 @@
             }, 4000);
         }
 
+        // Anima un contatore numerico da start a end nel tempo specificato (ms).
         function animateValue(obj, start, end, duration) {
             if(!obj) return;
             let startTimestamp = null;
@@ -1418,7 +1439,9 @@
             window.requestAnimationFrame(step);
         }
         
-        // ─── FILTRI ESPLORA ───────────────────────────────────────────────────
+        // ─── FILTRI ESPLORA DATI ──────────────────────────────────────────────
+        // Filtra allInsights per testo libero e dropdown cliente/settore/categoria.
+        // Viene chiamata sia a ogni input di ricerca sia dopo un reload dei dati.
         function applyFilters() {
             const q      = (searchInput?.value || '').toLowerCase().trim();
             const client = document.getElementById('filter-client')?.value  || '';
@@ -1449,7 +1472,10 @@
                 clients.map(c => `<option value="${c}">${c}</option>`).join('');
         }
 
-        // ─── RENDER BOZZE DA VALIDARE ────────────────────────────────────────
+        // ─── VALIDAZIONE BOZZE ────────────────────────────────────────────────
+        // Mostra le bozze altrui in attesa di validazione.
+        // I team_leader vedono solo le bozze del proprio team; i lead+ le vedono tutte.
+        // La validazione promuove lo status da 'bozza' a 'pubblicato'.
         async function renderDraftInsights() {
             const container = document.getElementById('draft-insights-grid');
             if (!container) return;
@@ -1466,7 +1492,6 @@
 
             let toShow = data || [];
 
-            // team_leader: solo bozze del proprio team; lead+: tutte
             if (!hasOrgRole('lead') && toShow.length > 0) {
                 const { data: mem } = await supa.from('team_members').select('team_id').eq('user_email', currentUser);
                 const { data: myT } = await supa.from('teams').select('name').in('id', (mem || []).map(m => m.team_id));
@@ -1535,14 +1560,17 @@
             });
         }
 
-        // ── ANALYTICS ────────────────────────────────────────────────────────
+        // ─── ANALYTICS ───────────────────────────────────────────────────────
+        // Renderizza 4 grafici Chart.js: distribuzione per categoria (doughnut),
+        // velocita' di inserimento settimanale (line), top clienti (bar orizzontale),
+        // insight per team (bar verticale). I dati sono filtrati per periodo e,
+        // se il ruolo non e' engagement_manager+, per i team dell'utente.
         let _charts = {};
 
         function renderAnalytics() {
             const period      = parseInt(document.getElementById('analytics-period')?.value ?? '30');
             const fullAccess  = hasOrgRole('engagement_manager');
 
-            // Dataset: full o solo team
             let data = allInsights.filter(i => i.status === 'pubblicato');
             if (!fullAccess) data = data.filter(i => myTeamNames.includes(i.team || ''));
             if (period > 0) {
@@ -1573,7 +1601,8 @@
                 <div class="kpi-content"><span class="kpi-value">${k.value}</span><span class="kpi-label">${k.label}</span></div>
             </div>`).join('');
 
-            // Distruggi chart precedenti
+            // Distrugge le istanze Chart.js precedenti prima di ricrearle
+            // per evitare memory leak e canvas gia' in uso.
             Object.values(_charts).forEach(c => c?.destroy());
             _charts = {};
 
@@ -1664,7 +1693,13 @@
             a.click(); URL.revokeObjectURL(url);
         });
 
-        // ── CONTENT STUDIO ───────────────────────────────────────────────────
+        // ─── CONTENT STUDIO ───────────────────────────────────────────────────
+        // Genera contenuti (post social o report) tramite /api/content-studio.
+        // Due modalita' sorgente:
+        //   - "Da Insight": usa gli insight selezionati dalla lista come contesto.
+        //   - "Da Testo": usa tutti gli insight pubblicati come contesto e il testo
+        //     dell'utente come direttiva specifica al modello.
+        // _studioInit impedisce la doppia registrazione dei listener al cambio vista.
         let _studioInit = false;
 
         function initContentStudio() {
@@ -1800,7 +1835,11 @@
             });
         }
 
-        // --- FUNZIONI SUPABASE DATA FETCH ---
+        // ─── CARICAMENTO DATI ─────────────────────────────────────────────────
+        // Scarica tutti gli insight dal DB e popola allInsights e draftInsights.
+        // allInsights include i pubblicati + le proprie bozze.
+        // draftInsights include le bozze altrui disponibili per validazione.
+        // Aggiorna badge, filtri e viste attive senza ricaricare la pagina.
         async function loadInsights() {
             try {
                 const { data, error } = await supa
@@ -1824,8 +1863,7 @@
                     (i.author_email || i.author) !== currentUser
                 );
 
-                // Badge nav contatore
-                const validaBadge = document.getElementById('valida-count-badge');
+                        const validaBadge = document.getElementById('valida-count-badge');
                 if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
                     const relevantDrafts = hasOrgRole('responsabile')
                         ? draftInsights
