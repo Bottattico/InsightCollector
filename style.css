@@ -339,10 +339,12 @@ button {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
-.card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border-color); }
-.card-author { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-muted); }
-.card-author img { width: 24px; height: 24px; border-radius: var(--radius-full); }
-.btn-upvote { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 0.35rem 0.75rem; border-radius: var(--radius-full); font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border-color); gap: 0.5rem; flex-wrap: wrap; }
+.card-author { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-muted); min-width: 0; flex: 1; }
+.card-author span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-author img { width: 24px; height: 24px; border-radius: var(--radius-full); flex-shrink: 0; }
+.card-footer-actions { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
+.btn-upvote { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 0.35rem 0.65rem; border-radius: var(--radius-full); font-size: 0.78rem; display: flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
 .btn-upvote:hover { background-color: rgba(16,185,129,.1); color: var(--success); border-color: rgba(16,185,129,.3); }
 .btn-upvote.upvoted { background-color: rgba(16,185,129,.15); color: var(--success); border-color: var(--success); }
 

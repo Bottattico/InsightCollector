@@ -702,7 +702,7 @@
                             <img src="${avatarUrl}" alt="Author">
                             <span>${displayAuthor} • ${dateStr}</span>
                         </div>
-                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <div class="card-footer-actions">
                             ${upvoteHtml}
                             ${deleteHtml}
                         </div>
@@ -1427,12 +1427,14 @@
                             <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(author)}&background=1E293B&color=fff" alt="">
                             <span>${author} • ${formatDate(insight.created_at)}</span>
                         </div>
-                        <button class="btn-valida" data-id="${insight.id}"
-                            style="padding:0.4rem 1rem;font-size:0.85rem;background:rgba(16,185,129,0.12);
-                                   color:#10B981;border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-full);
-                                   cursor:pointer;display:flex;align-items:center;gap:0.4rem;">
-                            <i class="fa-solid fa-check-circle"></i> Valida
-                        </button>
+                        <div class="card-footer-actions">
+                            <button class="btn-valida" data-id="${insight.id}"
+                                style="padding:0.4rem 1rem;font-size:0.85rem;background:rgba(16,185,129,0.12);
+                                       color:#10B981;border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-full);
+                                       cursor:pointer;display:flex;align-items:center;gap:0.4rem;white-space:nowrap;">
+                                <i class="fa-solid fa-check-circle"></i> Valida
+                            </button>
+                        </div>
                     </div>`;
                 container.appendChild(card);
             });
