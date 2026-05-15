@@ -35,6 +35,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Configurazione locale e strumenti AI
+.claude/
+config.js
+
 # Audio temporanei
 /tmp/
 *.tmp
