@@ -37,7 +37,6 @@
         function hasOrgRole(minRole) {
             return (ORG_ROLE_LEVEL[currentUserOrgRole] ?? 0) >= (ORG_ROLE_LEVEL[minRole] ?? 0);
         }
-        function isStaffRole(fn) { return currentUserOrgRole === fn; }
         const STAFF_ROLES = ['marketing', 'sales', 'hr', 'operations'];
         function isStaff() { return STAFF_ROLES.includes(currentUserOrgRole); }
         function formatDate(iso) {
@@ -316,14 +315,6 @@
             const createTeamBtnEl = document.getElementById('create-team-btn');
             if (createTeamBtnEl) createTeamBtnEl.style.display = hasOrgRole('team_leader') ? 'flex' : 'none';
 
-            // Esporta — lead+
-            const exportBtn = document.getElementById('export-btn');
-            if (exportBtn) exportBtn.style.display = hasOrgRole('lead') ? 'flex' : 'none';
-
-            // Analytics — engagement_manager+
-            const analyticsNav = document.querySelector('[data-target="view-analytics"]');
-            if (analyticsNav) analyticsNav.style.display = hasOrgRole('engagement_manager') ? 'flex' : 'none';
-
             // Content Studio — staff o admin
             const contentStudioNav = document.querySelector('[data-target="view-content-studio"]');
             if (contentStudioNav) contentStudioNav.style.display =
@@ -518,7 +509,7 @@
                         showToast("In ascolto...", "Parla ora. Clicca di nuovo per terminare.", "fa-microphone");
 
                     } catch (err) {
-                        alert("Devi autorizzare il microfono per usare questa funzione.");
+                        showToast('Microfono non disponibile', 'Devi autorizzare il microfono per usare questa funzione.', 'fa-microphone-slash', false);
                     }
                 } else {
                     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -620,7 +611,6 @@
 
                 } catch (err) {
                     console.error("Errore salvataggio:", err);
-                    alert("ERRORE DATABASE: " + (err.message || JSON.stringify(err)) + "\n\nSe dice 'relation insights does not exist' significa che non hai creato la tabella su Supabase! Se dice 'new row violates row-level security' devi disabilitare RLS sulla tabella.");
                     showToast("Errore di Salvataggio", "C'è stato un problema nel salvare l'insight nel database. Riprova.", "fa-xmark", false);
                 } finally {
                     submitBtn.disabled = false; 
@@ -1092,6 +1082,7 @@
         // ── Member Picker ──────────────────────────────────────────
         let allUsers = []; // cache utenti dal DB
         let selectedMembers = []; // { email, name, avatar }
+        let _memberPickerInit = false;
 
         async function loadAllUsers() {
             if (allUsers.length) return; // già caricati
@@ -1128,6 +1119,8 @@
         }
 
         function initMemberPicker() {
+            if (_memberPickerInit) return;
+            _memberPickerInit = true;
             const searchInput = document.getElementById('member-search');
             const suggestions = document.getElementById('member-suggestions');
             if (!searchInput || !suggestions) return;
@@ -1140,7 +1133,7 @@
                     u.email !== currentUser &&
                     !selectedMembers.find(m => m.email === u.email) &&
                     (u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
-                ).slice(0, 8);
+                ).slice(0, 15);
 
                 if (!results.length) {
                     suggestions.innerHTML = `<div class="member-no-results">Nessun utente trovato</div>`;
@@ -1834,7 +1827,7 @@
                 // Badge nav contatore
                 const validaBadge = document.getElementById('valida-count-badge');
                 if (validaBadge && hasOrgRole('team_leader') && !isStaff()) {
-                    const relevantDrafts = hasOrgRole('lead')
+                    const relevantDrafts = hasOrgRole('responsabile')
                         ? draftInsights
                         : draftInsights.filter(i => !i.team || myTeamNames.includes(i.team));
                     validaBadge.textContent = relevantDrafts.length;
