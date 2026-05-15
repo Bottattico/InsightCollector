@@ -110,6 +110,8 @@
                     if (orgBadge) orgBadge.textContent = ROLE_LABELS[currentUserOrgRole] || currentUserOrgRole;
                     const sidebarRoleEl = document.getElementById('sidebar-role');
                     if (sidebarRoleEl) sidebarRoleEl.textContent = ROLE_LABELS[currentUserOrgRole] || currentUserOrgRole;
+                    const profileRoleEl = document.getElementById('profile-role-large');
+                    if (profileRoleEl) profileRoleEl.textContent = ROLE_LABELS[currentUserOrgRole] || currentUserOrgRole;
 
                     updateNavByRole();
                     await loadMyUpvotes();
