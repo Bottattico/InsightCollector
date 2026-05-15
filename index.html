@@ -75,7 +75,7 @@
             <nav class="nav-menu">
                 <a href="#" class="nav-item active" data-target="view-nuovo-insight"><i class="fa-solid fa-plus-circle"></i> Nuovo Insight</a>
                 <a href="#" class="nav-item" data-target="view-esplora-dati"><i class="fa-solid fa-database"></i> Esplora Dati</a>
-                <a href="#" class="nav-item" data-target="view-ai" style="margin-bottom: 1rem; border: 1px solid var(--accent-primary); background: rgba(59, 130, 246, 0.05);"><i class="fa-solid fa-robot" style="color: var(--accent-primary);"></i> BTO Insight Brain</a>
+                <a href="#" class="nav-item nav-item-brain" data-target="view-ai"><i class="fa-solid fa-robot"></i> BTO Insight Brain</a>
                 <a href="#" class="nav-item" data-target="view-content-studio" style="display:none;"><i class="fa-solid fa-pen-nib"></i> Content Studio</a>
                 <a href="#" class="nav-item" data-target="view-valida" style="display:none;position:relative;">
                     <i class="fa-solid fa-circle-check"></i> Da Validare
@@ -414,8 +414,15 @@
                                 <input type="text" id="new-team-name" placeholder="Es. Team AI Transformation">
                             </div>
                             <div class="form-group" style="margin-bottom: 1rem;">
-                                <label for="new-team-members">Email Membri (una per riga)</label>
-                                <textarea id="new-team-members" rows="3" placeholder="mario.rossi@bto.it&#10;anna.verdi@bto.it&#10;luca.neri@bto.it"></textarea>
+                                <label>Membri del Team</label>
+                                <div class="member-picker">
+                                    <div class="member-search-wrap">
+                                        <i class="fa-solid fa-magnifying-glass"></i>
+                                        <input type="text" id="member-search" placeholder="Cerca per nome, cognome o email..." autocomplete="off">
+                                    </div>
+                                    <div id="member-suggestions" class="member-suggestions" style="display:none;"></div>
+                                    <div id="member-selected" class="member-selected"></div>
+                                </div>
                             </div>
                             <div style="display: flex; gap: 1rem; justify-content: flex-end;">
                                 <button type="button" id="cancel-team-btn" class="btn-secondary">Annulla</button>

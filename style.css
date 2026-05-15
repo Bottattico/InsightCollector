@@ -97,6 +97,16 @@ body {
     color: var(--accent-primary);
     border-left: 3px solid var(--accent-primary);
 }
+.nav-item-brain {
+    margin-bottom: 1rem;
+    border: 1px solid var(--accent-primary);
+    background: rgba(59,130,246,.05);
+}
+.nav-item-brain i { color: var(--accent-primary); }
+@media (max-width: 768px) {
+    .nav-item-brain { margin-bottom: 0; border: none; background: transparent; }
+    .nav-item-brain i { color: inherit; }
+}
 
 .user-profile {
     display: flex;
@@ -584,6 +594,47 @@ button {
     70%  { box-shadow: 0 0 0 15px rgba(239,68,68,0); }
     100% { box-shadow: 0 0 0 0   rgba(239,68,68,0); }
 }
+
+/* ═══════════════════════════════════════════════════════
+   MEMBER PICKER
+   ══════════════════════════════════════════════════════ */
+.member-picker { display: flex; flex-direction: column; gap: 0.5rem; position: relative; }
+.member-search-wrap { position: relative; }
+.member-search-wrap i { position: absolute; left: 0.875rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; pointer-events: none; }
+.member-search-wrap input { padding-left: 2.5rem; }
+.member-suggestions {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+    background: var(--bg-surface);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-md);
+    max-height: 220px; overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+}
+.member-suggestion-item {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.65rem 0.875rem;
+    cursor: pointer; transition: var(--transition);
+    font-size: 0.875rem;
+}
+.member-suggestion-item:hover { background: var(--bg-surface-hover); }
+.member-suggestion-item img { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; }
+.member-suggestion-name { font-weight: 600; color: var(--text-primary); }
+.member-suggestion-email { font-size: 0.78rem; color: var(--text-muted); }
+.member-selected { display: flex; flex-wrap: wrap; gap: 0.4rem; min-height: 36px; }
+.member-chip {
+    display: flex; align-items: center; gap: 0.4rem;
+    background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.3);
+    color: var(--accent-primary); border-radius: var(--radius-full);
+    padding: 0.25rem 0.5rem 0.25rem 0.35rem; font-size: 0.8rem; font-weight: 500;
+}
+.member-chip img { width: 20px; height: 20px; border-radius: 50%; }
+.member-chip-remove {
+    background: none; border: none; color: inherit; padding: 0;
+    font-size: 0.75rem; cursor: pointer; line-height: 1;
+    display: flex; align-items: center; opacity: 0.7;
+}
+.member-chip-remove:hover { opacity: 1; }
+.member-no-results { padding: 0.75rem 0.875rem; font-size: 0.85rem; color: var(--text-muted); text-align: center; }
 
 /* ═══════════════════════════════════════════════════════
    RESPONSIVE — TABLET  (≤ 1024px)

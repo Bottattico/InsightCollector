@@ -1089,39 +1089,121 @@
         const cancelTeamBtn = document.getElementById('cancel-team-btn');
         const saveTeamBtn = document.getElementById('save-team-btn');
 
+        // ── Member Picker ──────────────────────────────────────────
+        let allUsers = []; // cache utenti dal DB
+        let selectedMembers = []; // { email, name, avatar }
+
+        async function loadAllUsers() {
+            if (allUsers.length) return; // già caricati
+            const { data, error } = await supa
+                .from('profiles')
+                .select('email, first_name, last_name')
+                .order('first_name');
+            if (!error && data) {
+                allUsers = data.map(u => ({
+                    email: u.email,
+                    name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email?.split('@')[0] || '',
+                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent([u.first_name, u.last_name].filter(Boolean).join(' ') || u.email)}&background=1E293B&color=fff`
+                }));
+            }
+        }
+
+        function renderMemberChips() {
+            const container = document.getElementById('member-selected');
+            if (!container) return;
+            container.innerHTML = selectedMembers.map(m => `
+                <div class="member-chip" data-email="${m.email}">
+                    <img src="${m.avatar}" alt="">
+                    <span>${m.name || m.email}</span>
+                    <button class="member-chip-remove" data-email="${m.email}" title="Rimuovi"><i class="fa-solid fa-xmark"></i></button>
+                </div>`).join('');
+            container.querySelectorAll('.member-chip-remove').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const email = btn.dataset.email;
+                    selectedMembers = selectedMembers.filter(m => m.email !== email);
+                    renderMemberChips();
+                });
+            });
+        }
+
+        function initMemberPicker() {
+            const searchInput = document.getElementById('member-search');
+            const suggestions = document.getElementById('member-suggestions');
+            if (!searchInput || !suggestions) return;
+
+            searchInput.addEventListener('input', () => {
+                const q = searchInput.value.trim().toLowerCase();
+                if (!q) { suggestions.style.display = 'none'; return; }
+
+                const results = allUsers.filter(u =>
+                    u.email !== currentUser &&
+                    !selectedMembers.find(m => m.email === u.email) &&
+                    (u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+                ).slice(0, 8);
+
+                if (!results.length) {
+                    suggestions.innerHTML = `<div class="member-no-results">Nessun utente trovato</div>`;
+                } else {
+                    suggestions.innerHTML = results.map(u => `
+                        <div class="member-suggestion-item" data-email="${u.email}" data-name="${u.name}" data-avatar="${u.avatar}">
+                            <img src="${u.avatar}" alt="">
+                            <div>
+                                <div class="member-suggestion-name">${u.name}</div>
+                                <div class="member-suggestion-email">${u.email}</div>
+                            </div>
+                        </div>`).join('');
+                    suggestions.querySelectorAll('.member-suggestion-item').forEach(item => {
+                        item.addEventListener('click', () => {
+                            selectedMembers.push({ email: item.dataset.email, name: item.dataset.name, avatar: item.dataset.avatar });
+                            renderMemberChips();
+                            searchInput.value = '';
+                            suggestions.style.display = 'none';
+                        });
+                    });
+                }
+                suggestions.style.display = 'block';
+            });
+
+            // Chiudi suggerimenti cliccando fuori
+            document.addEventListener('click', e => {
+                if (!e.target.closest('.member-picker')) suggestions.style.display = 'none';
+            });
+        }
+
         if (createTeamBtn && createTeamForm) {
-            createTeamBtn.addEventListener('click', () => {
+            createTeamBtn.addEventListener('click', async () => {
                 createTeamForm.style.display = 'block';
                 createTeamBtn.style.display = 'none';
+                selectedMembers = [];
+                renderMemberChips();
+                await loadAllUsers();
+                initMemberPicker();
             });
         }
         if (cancelTeamBtn) {
             cancelTeamBtn.addEventListener('click', () => {
                 createTeamForm.style.display = 'none';
+                selectedMembers = [];
                 if (createTeamBtn) createTeamBtn.style.display = 'flex';
             });
         }
         if (saveTeamBtn) {
             saveTeamBtn.addEventListener('click', async () => {
                 const teamName = document.getElementById('new-team-name')?.value.trim();
-                const membersText = document.getElementById('new-team-members')?.value.trim();
-
-                if (!teamName) { alert('Inserisci un nome per il team'); return; }
+                if (!teamName) { showToast('Campo mancante', 'Inserisci un nome per il team.', 'fa-triangle-exclamation', false); return; }
 
                 saveTeamBtn.disabled = true;
                 saveTeamBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creazione...';
 
                 try {
-                    // 1. Crea il team
                     const { data: newTeam, error: teamErr } = await supa
                         .from('teams')
                         .insert([{ name: teamName, created_by: currentUser }])
                         .select()
                         .single();
-
                     if (teamErr) throw teamErr;
 
-                    // 2. Prepara la lista membri (il creatore + quelli inseriti)
                     const { data: { session: s } } = await supa.auth.getSession();
                     const creatorMeta = s?.user?.user_metadata || {};
                     const creatorName = (creatorMeta.first_name && creatorMeta.last_name)
@@ -1129,31 +1211,28 @@
                         : currentUser.split('@')[0];
 
                     const membersToInsert = [{ team_id: newTeam.id, user_email: currentUser, user_name: creatorName }];
-
-                    if (membersText) {
-                        const emails = membersText.split('\n').map(e => e.trim()).filter(e => e && e.includes('@'));
-                        emails.forEach(email => {
-                            if (email !== currentUser) {
-                                membersToInsert.push({ team_id: newTeam.id, user_email: email, user_name: email.split('@')[0] });
-                            }
-                        });
-                    }
+                    selectedMembers.forEach(m => {
+                        if (m.email !== currentUser) {
+                            membersToInsert.push({ team_id: newTeam.id, user_email: m.email, user_name: m.name || m.email.split('@')[0] });
+                        }
+                    });
 
                     const { error: memErr } = await supa.from('team_members').insert(membersToInsert);
                     if (memErr) throw memErr;
 
-                    // 3. Reset form e ricarica
                     document.getElementById('new-team-name').value = '';
-                    document.getElementById('new-team-members').value = '';
+                    document.getElementById('member-search').value = '';
+                    selectedMembers = [];
+                    renderMemberChips();
                     createTeamForm.style.display = 'none';
                     if (createTeamBtn) createTeamBtn.style.display = 'flex';
 
-                    showToast("Team Creato!", `"${teamName}" è stato creato con ${membersToInsert.length} membr${membersToInsert.length === 1 ? 'o' : 'i'}.`, "fa-people-group");
+                    showToast('Team Creato!', `"${teamName}" creato con ${membersToInsert.length} membr${membersToInsert.length === 1 ? 'o' : 'i'}.`, 'fa-people-group');
                     loadUserTeams();
 
                 } catch (err) {
                     console.error('Errore creazione team:', err);
-                    showToast("Errore", "Impossibile creare il team: " + err.message, "fa-triangle-exclamation", false);
+                    showToast('Errore', 'Impossibile creare il team: ' + err.message, 'fa-triangle-exclamation', false);
                 } finally {
                     saveTeamBtn.disabled = false;
                     saveTeamBtn.innerHTML = '<i class="fa-solid fa-check"></i> Crea';
